@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
@@ -22,16 +25,15 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG#v}"
-          python -c "
-import json
-path = 'custom_components/hacs_compatibility_auditor/manifest.json'
-with open(path) as f:
-    manifest = json.load(f)
-manifest['version'] = '$VERSION'
-with open(path, 'w') as f:
-    json.dump(manifest, f, indent=2)
-    f.write('\n')
-"
+          python -c "import json; path='custom_components/hacs_compatibility_auditor/manifest.json'; m=json.load(open(path)); m['version']='${VERSION}'; open(path,'w').write(json.dumps(m,indent=2)+'\n')"
+
+      - name: Commit updated manifest.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_components/hacs_compatibility_auditor/manifest.json
+          git commit -m "Bump manifest version to $VERSION"
+          git push origin main
 
       - name: Create release zip
         run: |
