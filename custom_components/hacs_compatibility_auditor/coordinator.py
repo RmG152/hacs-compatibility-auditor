@@ -200,6 +200,9 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             try:
                 releases = await self._github_client.get_ha_releases(per_page=10)
                 current_ver = self._parse_simple_version(ha_version)
+                if current_ver is None:
+                    _LOGGER.warning("Could not parse current HA version: %s", ha_version)
+                    return
 
                 for release in releases:
                     tag = release.tag_name
@@ -231,7 +234,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         from packaging.version import InvalidVersion, parse as parse_version
 
         try:
-            cleaned = re.sub(r"(dev\d*|b\d+|rc\d+)$", "", version_str.strip())
+            cleaned = version_str.strip()
+            # Strip local version separator (e.g., "2025.5.1.dev0+githash")
+            if "+" in cleaned:
+                cleaned = cleaned.split("+")[0]
+            cleaned = re.sub(r"(dev\d*|b\d+|rc\d+)$", "", cleaned).rstrip(".")
             if not cleaned:
                 return None
             return parse_version(cleaned)

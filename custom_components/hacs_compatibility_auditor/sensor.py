@@ -14,6 +14,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -112,16 +113,16 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
             attrs["unknown_count"] = data.get("unknown_count", 0)
             # List incompatible packages
             incompatible = [
-                r["nombre"]
+                r["name"]
                 for r in data.get("results", [])
-                if r.get("estado") == STATUS_INCOMPATIBLE
+                if r.get("status") == STATUS_INCOMPATIBLE
             ]
             attrs["incompatible_packages"] = incompatible
             # List warning packages
             warnings = [
-                r["nombre"]
+                r["name"]
                 for r in data.get("results", [])
-                if r.get("estado") == STATUS_WARNING
+                if r.get("status") == STATUS_WARNING
             ]
             attrs["warning_packages"] = warnings
         elif key == "ha_version_next":
@@ -130,7 +131,7 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
             # Breakdown by type
             type_counts: dict[str, int] = {}
             for r in data.get("results", []):
-                pkg_type = r.get("tipo", "unknown")
+                pkg_type = r.get("type", "unknown")
                 type_counts[pkg_type] = type_counts.get(pkg_type, 0) + 1
             attrs["by_type"] = type_counts
 
@@ -163,8 +164,8 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
         """Initialize the package sensor."""
         super().__init__(coordinator)
         self.coordinator = coordinator
-        self._package_full_name = package_data.get("repositorio", "")
-        self._package_name = package_data.get("nombre", "")
+        self._package_full_name = package_data.get("repository", "")
+        self._package_name = package_data.get("name", "")
         slug = self._package_full_name.replace("/", "_").lower()
         self._attr_unique_id = f"{DOMAIN}_package_{slug}"
         self._attr_translation_key = "hacs_package"
@@ -178,7 +179,7 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
         if data:
             for result in data.get("results", []):
-                if result.get("repositorio") == self._package_full_name:
+                if result.get("repository") == self._package_full_name:
                     self._package_data = result
                     break
         super()._handle_coordinator_update()
@@ -186,23 +187,23 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> str:
         """Return the compatibility status."""
-        return self._package_data.get("estado", STATUS_UNKNOWN)
+        return self._package_data.get("status", STATUS_UNKNOWN)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed package attributes."""
         data = self._package_data
         attrs = {
-            "nombre": data.get("nombre", ""),
-            "repositorio": data.get("repositorio", ""),
-            "tipo": data.get("tipo", ""),
-            "version_instalada": data.get("version_instalada", ""),
-            "version_mas_reciente": data.get("version_mas_reciente", ""),
-            "compatible_con_actual": data.get("compatible_con_actual"),
-            "compatible_con_siguiente": data.get("compatible_con_siguiente"),
-            "requisito_ha_manifest": data.get("requisito_ha_manifest", ""),
-            "issues_relevantes": data.get("issues_relevantes", []),
-            "ultima_comprobacion": data.get("ultima_comprobacion", ""),
+            "name": data.get("name", ""),
+            "repository": data.get("repository", ""),
+            "type": data.get("type", ""),
+            "installed_version": data.get("installed_version", ""),
+            "latest_version": data.get("latest_version", ""),
+            "compatible_with_current": data.get("compatible_with_current"),
+            "compatible_with_next": data.get("compatible_with_next"),
+            "manifest_ha_requirement": data.get("manifest_ha_requirement", ""),
+            "issues_relevant": data.get("issues_relevant", []),
+            "last_checked": data.get("last_checked", ""),
             "error": data.get("error", ""),
             "repository_url": f"https://github.com/{self._package_full_name}",
         }
@@ -270,7 +271,7 @@ def _async_update_package_sensors(
         return
 
     # Get existing entity unique IDs
-    entity_registry = hass.helpers.entity_registry.async_get(hass)
+    entity_registry = er.async_get(hass)
     existing_uids = {
         entity.unique_id
         for entity in entity_registry.entities.values()
@@ -280,7 +281,7 @@ def _async_update_package_sensors(
 
     new_entities: list[SensorEntity] = []
     for result in data.get("results", []):
-        slug = result.get("repositorio", "").replace("/", "_").lower()
+        slug = result.get("repository", "").replace("/", "_").lower()
         uid = f"{DOMAIN}_package_{slug}"
         if uid not in existing_uids:
             new_entities.append(HacsPackageSensor(coordinator, result))

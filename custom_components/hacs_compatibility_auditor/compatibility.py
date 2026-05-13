@@ -45,17 +45,17 @@ class CompatibilityResult:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for sensor attributes."""
         return {
-            "nombre": self.package.name,
-            "repositorio": self.package.full_name,
-            "tipo": self.package.category,
-            "version_instalada": self.package.installed_version,
-            "version_mas_reciente": self.latest_version,
-            "compatible_con_actual": self.compatible_with_current,
-            "compatible_con_siguiente": self.compatible_with_next,
-            "estado": self.status,
-            "issues_relevantes": self.issues_relevantes,
-            "requisito_ha_manifest": self.manifest_ha_requirement,
-            "ultima_comprobacion": self.last_checked,
+            "name": self.package.name,
+            "repository": self.package.full_name,
+            "type": self.package.category,
+            "installed_version": self.package.installed_version,
+            "latest_version": self.latest_version,
+            "compatible_with_current": self.compatible_with_current,
+            "compatible_with_next": self.compatible_with_next,
+            "status": self.status,
+            "issues_relevant": self.issues_relevant,
+            "manifest_ha_requirement": self.manifest_ha_requirement,
+            "last_checked": self.last_checked,
             "error": self.error,
         }
 
@@ -259,7 +259,7 @@ class CompatibilityChecker:
         HA versions can be like: 2024.1.0, 2024.1.0b1, 2024.1.0dev0
         """
         # Remove 'dev' and 'b' suffixes for comparison
-        cleaned = re.sub(r"(dev\d*|b\d+|rc\d+)$", "", version_str.strip())
+        cleaned = re.sub(r"(dev\d*|b\d+|rc\d+)$", "", version_str.strip()).rstrip(".")
         if not cleaned:
             raise ValueError(f"Empty version after cleaning: {version_str}")
         return parse_version(cleaned)

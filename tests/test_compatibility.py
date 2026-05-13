@@ -419,14 +419,14 @@ class TestCompatibilityResult:
         )
         d = result.to_dict()
 
-        assert d["nombre"] == "Test"
-        assert d["repositorio"] == "test/repo"
-        assert d["compatible_con_actual"] is True
-        assert d["compatible_con_siguiente"] is True
-        assert d["estado"] == STATUS_COMPATIBLE
-        assert d["version_mas_reciente"] == "1.1.0"
-        assert "issues_relevantes" in d
-        assert "ultima_comprobacion" in d
+        assert d["name"] == "Test"
+        assert d["repository"] == "test/repo"
+        assert d["compatible_with_current"] is True
+        assert d["compatible_with_next"] is True
+        assert d["status"] == STATUS_COMPATIBLE
+        assert d["latest_version"] == "1.1.0"
+        assert "issues_relevant" in d
+        assert "last_checked" in d
 
 
 # --- Should Ignore Tests ---

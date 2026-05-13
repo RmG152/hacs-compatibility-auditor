@@ -105,42 +105,42 @@ class TestPackageSensor:
     def test_compatible_status(self):
         """Test a compatible package sensor."""
         package_data = {
-            "nombre": "Test Card",
-            "repositorio": "test/card",
-            "tipo": "plugin",
-            "version_instalada": "1.0.0",
-            "version_mas_reciente": "1.1.0",
-            "compatible_con_actual": True,
-            "compatible_con_siguiente": True,
-            "estado": STATUS_COMPATIBLE,
-            "issues_relevantes": [],
-            "requisito_ha_manifest": "",
-            "ultima_comprobacion": "2024-06-01T00:00:00",
+            "name": "Test Card",
+            "repository": "test/card",
+            "type": "plugin",
+            "installed_version": "1.0.0",
+            "latest_version": "1.1.0",
+            "compatible_with_current": True,
+            "compatible_with_next": True,
+            "status": STATUS_COMPATIBLE,
+            "issues_relevant": [],
+            "manifest_ha_requirement": "",
+            "last_checked": "2024-06-01T00:00:00",
             "error": "",
         }
         coordinator = self._make_coordinator()
         sensor = HacsPackageSensor(coordinator, package_data)
 
         assert sensor.native_value == STATUS_COMPATIBLE
-        assert sensor.extra_state_attributes["nombre"] == "Test Card"
-        assert sensor.extra_state_attributes["compatible_con_actual"] is True
+        assert sensor.extra_state_attributes["name"] == "Test Card"
+        assert sensor.extra_state_attributes["compatible_with_current"] is True
 
     def test_incompatible_status(self):
         """Test an incompatible package sensor."""
         package_data = {
-            "nombre": "Broken",
-            "repositorio": "test/broken",
-            "tipo": "integration",
-            "version_instalada": "2.0.0",
-            "version_mas_reciente": "2.0.0",
-            "compatible_con_actual": False,
-            "compatible_con_siguiente": False,
-            "estado": STATUS_INCOMPATIBLE,
-            "issues_relevantes": [
+            "name": "Broken",
+            "repository": "test/broken",
+            "type": "integration",
+            "installed_version": "2.0.0",
+            "latest_version": "2.0.0",
+            "compatible_with_current": False,
+            "compatible_with_next": False,
+            "status": STATUS_INCOMPATIBLE,
+            "issues_relevant": [
                 {"title": "Broken after HA update", "url": "https://github.com/test/broken/issues/1"}
             ],
-            "requisito_ha_manifest": ">=2025.1.0",
-            "ultima_comprobacion": "2024-06-01T00:00:00",
+            "manifest_ha_requirement": ">=2025.1.0",
+            "last_checked": "2024-06-01T00:00:00",
             "error": "",
         }
         coordinator = self._make_coordinator()
@@ -148,23 +148,23 @@ class TestPackageSensor:
 
         assert sensor.native_value == STATUS_INCOMPATIBLE
         attrs = sensor.extra_state_attributes
-        assert attrs["compatible_con_actual"] is False
-        assert len(attrs["issues_relevantes"]) == 1
+        assert attrs["compatible_with_current"] is False
+        assert len(attrs["issues_relevant"]) == 1
 
     def test_warning_icon(self):
         """Test dynamic icon for warning status."""
         package_data = {
-            "nombre": "Warned",
-            "repositorio": "test/warned",
-            "tipo": "theme",
-            "version_instalada": "1.0.0",
-            "version_mas_reciente": "1.0.0",
-            "compatible_con_actual": True,
-            "compatible_con_siguiente": None,
-            "estado": STATUS_WARNING,
-            "issues_relevantes": [],
-            "requisito_ha_manifest": "",
-            "ultima_comprobacion": "",
+            "name": "Warned",
+            "repository": "test/warned",
+            "type": "theme",
+            "installed_version": "1.0.0",
+            "latest_version": "1.0.0",
+            "compatible_with_current": True,
+            "compatible_with_next": None,
+            "status": STATUS_WARNING,
+            "issues_relevant": [],
+            "manifest_ha_requirement": "",
+            "last_checked": "",
             "error": "",
         }
         coordinator = self._make_coordinator()
