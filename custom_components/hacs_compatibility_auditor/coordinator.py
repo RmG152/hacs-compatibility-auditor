@@ -5,8 +5,9 @@ Manages periodic scanning and caching of compatibility data.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import timedelta, datetime as dt, timezone as tz 
+from datetime import timedelta, datetime as dt, timezone as tz
 from typing import Any
 
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -119,6 +120,10 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
     async def _async_setup(self) -> None:
         """Set up the GitHub client and checker."""
+        if self._github_client is not None:
+            _LOGGER.debug("Coordinator already set up, skipping")
+            return
+
         _LOGGER.debug(
             "Setting up GitHub client (timeout=%ds, retries=%d, cache_ttl=%dh)",
             self._github_timeout,
@@ -147,6 +152,21 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from all sources."""
+
+        # Use a lock to prevent concurrent scans
+        if hasattr(self, "_scan_lock") and self._scan_lock.locked():
+            _LOGGER.debug("Scan already in progress, waiting for it to complete")
+            async with self._scan_lock:
+                return self._data.to_dict()
+
+        if not hasattr(self, "_scan_lock"):
+            self._scan_lock = asyncio.Lock()
+
+        async with self._scan_lock:
+            return await self._async_update_data_impl()
+
+    async def _async_update_data_impl(self) -> dict[str, Any]:
+        """Internal implementation of data update."""
 
         scan_start = dt.now(tz.utc)
         _LOGGER.info("=== Starting HACS compatibility scan ===")

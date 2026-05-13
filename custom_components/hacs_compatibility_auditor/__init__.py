@@ -43,10 +43,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Set up coordinator
-    await coordinator._async_setup()
-
-    # Perform first data refresh
+    # Perform first data refresh (base class calls _async_setup() automatically)
     await coordinator.async_config_entry_first_refresh()
 
     # Set up platforms (sensors)
