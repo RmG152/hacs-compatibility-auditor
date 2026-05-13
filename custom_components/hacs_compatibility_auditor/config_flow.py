@@ -93,7 +93,7 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
                     errors["base"] = error or "cannot_connect"
                 else:
                     return self.async_create_entry(
-                        title="HACS Compatibility Auditor",
+                        title="HCA",
                         data={
                             CONF_GITHUB_TOKEN: token or "",
                         },

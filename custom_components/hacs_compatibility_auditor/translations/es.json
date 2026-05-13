@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HACS Compatibility Auditor",
+        "description": "Configura la auditoría de compatibilidad de paquetes HACS.",
+        "data": {
+          "github_token": "Token de GitHub (opcional, para mayor cuota de API)",
+          "check_interval": "Intervalo de comprobación (horas)",
+          "cache_hours": "Horas de caché para consultas GitHub",
+          "github_timeout": "Timeout de consultas GitHub (segundos)",
+          "github_retries": "Reintentos de consultas GitHub"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se pudo conectar a la API de GitHub",
+      "invalid_token": "Token de GitHub inválido",
+      "hacs_not_found": "HACS no está instalado o no se pudo acceder a sus datos"
+    },
+    "abort": {
+      "already_configured": "La integración ya está configurada"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de HACS Compatibility Auditor",
+        "description": "Ajusta la configuración de auditoría.",
+        "data": {
+          "github_token": "Token de GitHub (opcional)",
+          "check_interval": "Intervalo de comprobación (horas)",
+          "cache_hours": "Horas de caché",
+          "issue_labels_priority": "Labels de GitHub con prioridad alta (separadas por coma)",
+          "ignore_list": "Paquetes a ignorar (nombres de repo separados por coma)",
+          "github_timeout": "Timeout de consultas GitHub (segundos)",
+          "github_retries": "Reintentos de consultas GitHub"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "ha_version_current": {
+        "name": "HCA Versión actual de HA"
+      },
+      "ha_version_next": {
+        "name": "HCA Próxima versión de HA"
+      },
+      "hacs_packages_total": {
+        "name": "HCA Paquetes HACS totales"
+      },
+      "hacs_incompatible_count": {
+        "name": "HCA Paquetes incompatibles"
+      },
+      "hacs_package": {
+        "name": "HCA Paquete HACS"
+      }
+    }
+  },
+  "services": {
+    "check_now": {
+      "name": "Forzar comprobación",
+      "description": "Fuerza una re-comprobación inmediata de la compatibilidad de todos los paquetes HACS."
+    }
+  }
+}

@@ -42,19 +42,19 @@
   "entity": {
     "sensor": {
       "ha_version_current": {
-        "name": "HA Current"
+        "name": "HCA Current HA version"
       },
       "ha_version_next": {
-        "name": "HA Next"
+        "name": "HCA Next HA version"
       },
       "hacs_packages_total": {
-        "name": "Packages Total"
+        "name": "HCA Total HACS packages"
       },
       "hacs_incompatible_count": {
-        "name": "Incompatible"
+        "name": "HCA Incompatible packages"
       },
       "hacs_package": {
-        "name": "Package"
+        "name": "HCA HACS Package"
       }
     }
   },

@@ -65,7 +65,7 @@ GLOBAL_SENSOR_DESCRIPTIONS = [
 class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
     """Sensor for global HACS compatibility statistics."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
 
     def __init__(
         self,
@@ -77,6 +77,7 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
         self.coordinator = coordinator
         self.entity_description = description
         self._attr_unique_id = f"{DOMAIN}_{description.key}"
+        self._attr_name = f"hca_{description.key}"
         self._attr_native_value = None
 
     @property
@@ -152,7 +153,7 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
 class HacsPackageSensor(CoordinatorEntity, SensorEntity):
     """Sensor for individual HACS package compatibility status."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -168,8 +169,7 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
         self._package_name = package_data.get("name", "")
         slug = self._package_full_name.replace("/", "_").lower()
         self._attr_unique_id = f"{DOMAIN}_package_{slug}"
-        self._attr_translation_key = "hacs_package"
-        self._attr_name = self._package_name
+        self._attr_name = f"hca_package_{slug}"
         self._attr_options = [STATUS_COMPATIBLE, STATUS_WARNING, STATUS_INCOMPATIBLE, STATUS_UNKNOWN, "ignored"]
         self._package_data = package_data
 
