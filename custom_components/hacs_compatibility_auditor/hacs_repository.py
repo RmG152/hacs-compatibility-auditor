@@ -59,15 +59,17 @@ class HacsRepositoryReader:
         This method tries multiple approaches to read HACS data:
         1. Direct access to HACS internal data
         2. Reading HACS .storage file
-        3. Reading from HACS websocket API
+        3. Reading from HACS repositories directory
         """
+        _LOGGER.debug("Starting HACS package enumeration")
         packages: list[HacsPackage] = []
 
         # Approach 1: Try direct HACS access
+        _LOGGER.debug("Approach 1: Trying direct HACS internal data access")
         try:
             packages = await self._read_from_hacs_internal()
             if packages:
-                _LOGGER.debug(
+                _LOGGER.info(
                     "Found %d HACS packages via internal data access", len(packages)
                 )
                 return packages
@@ -76,10 +78,11 @@ class HacsRepositoryReader:
             _LOGGER.debug("Could not read HACS internal data: %s", exc)
 
         # Approach 2: Read from HACS .storage file
+        _LOGGER.debug("Approach 2: Trying HACS .storage file")
         try:
             packages = await self._read_from_storage()
             if packages:
-                _LOGGER.debug(
+                _LOGGER.info(
                     "Found %d HACS packages via storage file", len(packages)
                 )
                 return packages
@@ -88,10 +91,11 @@ class HacsRepositoryReader:
             _LOGGER.debug("Could not read HACS storage file: %s", exc)
 
         # Approach 3: Read from HACS repositories directory
+        _LOGGER.debug("Approach 3: Trying HACS repositories directory")
         try:
             packages = await self._read_from_repositories_dir()
             if packages:
-                _LOGGER.debug(
+                _LOGGER.info(
                     "Found %d HACS packages via repositories directory", len(packages)
                 )
                 return packages
@@ -133,42 +137,61 @@ class HacsRepositoryReader:
             )
             return []
 
+        _LOGGER.debug(
+            "HACS data object type: %s, attributes: %s",
+            type(hacs_data).__name__,
+            [a for a in dir(hacs_data) if not a.startswith("_")][:10],
+        )
+
         packages = []
 
         # Modern HACS: use list_downloaded (returns HacsRepository objects)
         repositories_obj = getattr(hacs_data, "repositories", None)
         if repositories_obj is not None:
+            _LOGGER.debug("Found HACS repositories object: %s", type(repositories_obj).__name__)
             list_downloaded = getattr(repositories_obj, "list_downloaded", None)
             if list_downloaded is not None:
+                downloaded_count = len(list_downloaded) if hasattr(list_downloaded, "__len__") else "?"
+                _LOGGER.debug("Using list_downloaded (%s items)", downloaded_count)
                 for repo in list_downloaded:
                     package = self._parse_hacs_repository(repo)
                     if package and package.installed:
                         packages.append(package)
                 if packages:
+                    _LOGGER.debug(
+                        "Parsed %d installed packages from list_downloaded", len(packages)
+                    )
                     return packages
 
             # Fallback: iterate repositories directly
             if isinstance(repositories_obj, dict):
+                _LOGGER.debug("Iterating repositories dict (%d entries)", len(repositories_obj))
                 for repo in repositories_obj.values():
                     package = self._parse_hacs_repository(repo)
                     if package and package.installed:
                         packages.append(package)
             elif hasattr(repositories_obj, "__iter__"):
+                _LOGGER.debug("Iterating repositories collection")
                 for repo in repositories_obj:
                     package = self._parse_hacs_repository(repo)
                     if package and package.installed:
                         packages.append(package)
             if packages:
+                _LOGGER.debug(
+                    "Parsed %d installed packages from repositories collection", len(packages)
+                )
                 return packages
 
         # Legacy: try hacs_data.repo
         repo_obj = getattr(hacs_data, "repo", None)
         if repo_obj is not None and hasattr(repo_obj, "__iter__"):
+            _LOGGER.debug("Trying legacy hacs_data.repo iteration")
             for repo in repo_obj:
                 package = self._parse_hacs_repository(repo)
                 if package and package.installed:
                     packages.append(package)
 
+        _LOGGER.debug("Internal HACS read: %d packages found", len(packages))
         return packages
 
     def _parse_hacs_repository(self, repo: Any) -> HacsPackage | None:
@@ -179,6 +202,7 @@ class HacsRepositoryReader:
 
             full_name = getattr(source, "full_name", "") or ""
             if not full_name:
+                _LOGGER.debug("Skipping HACS repo with no full_name (type=%s)", type(repo).__name__)
                 return None
 
             parts = full_name.split("/")
@@ -214,6 +238,15 @@ class HacsRepositoryReader:
             if not homeassistant_version:
                 homeassistant_version = getattr(source, "homeassistant_version", "") or ""
 
+            _LOGGER.debug(
+                "Parsed HACS repo: %s (category=%s, installed=%s, version=%s, ha_req=%s)",
+                full_name,
+                category,
+                installed,
+                installed_version,
+                homeassistant_version,
+            )
+
             return HacsPackage(
                 id=str(getattr(source, "id", full_name)),
                 full_name=full_name,
@@ -237,6 +270,8 @@ class HacsRepositoryReader:
         config_dir = self._hass.config.config_dir
         storage_dir = Path(config_dir) / ".storage"
 
+        _LOGGER.debug("Looking for HACS storage files in: %s", storage_dir)
+
         # Try storage files in order of preference
         candidates = [
             storage_dir / "hacs.repositories",   # Modern HACS: all repos dict
@@ -247,31 +282,46 @@ class HacsRepositoryReader:
 
         for storage_path in candidates:
             if not storage_path.exists():
+                _LOGGER.debug("Storage file not found: %s", storage_path.name)
                 continue
+            _LOGGER.debug("Reading HACS storage file: %s", storage_path.name)
             try:
                 data = await self._hass.async_add_executor_job(
                     self._read_storage_file, str(storage_path)
                 )
                 packages = self._parse_storage_data(data, storage_path.name)
                 if packages:
+                    _LOGGER.debug(
+                        "Parsed %d packages from %s", len(packages), storage_path.name
+                    )
                     return packages
+                _LOGGER.debug("No installed packages found in %s", storage_path.name)
             except Exception as exc:
                 _LOGGER.debug("Error reading HACS storage %s: %s", storage_path.name, exc)
 
         # Final fallback: ancient path inside HACS component dir
         ancient_path = Path(config_dir) / "custom_components" / "hacs" / ".storage"
         if ancient_path.exists():
+            _LOGGER.debug("Trying legacy HACS storage path: %s", ancient_path)
             try:
                 for f in ancient_path.iterdir():
                     if f.suffix == ".json":
+                        _LOGGER.debug("Reading legacy storage file: %s", f.name)
                         data = await self._hass.async_add_executor_job(
                             self._read_storage_file, str(f)
                         )
                         packages = self._parse_storage_data(data, f.name)
                         if packages:
+                            _LOGGER.debug(
+                                "Parsed %d packages from legacy %s",
+                                len(packages),
+                                f.name,
+                            )
                             return packages
             except Exception as exc:
                 _LOGGER.debug("Error reading legacy HACS storage: %s", exc)
+        else:
+            _LOGGER.debug("Legacy HACS storage path does not exist: %s", ancient_path)
 
         return []
 
@@ -365,7 +415,10 @@ class HacsRepositoryReader:
         config_dir = self._hass.config.config_dir
         repos_path = Path(config_dir) / "custom_components" / "hacs" / "repositories"
 
+        _LOGGER.debug("Looking for HACS repositories directory: %s", repos_path)
+
         if not repos_path.exists():
+            _LOGGER.debug("HACS repositories directory does not exist")
             return []
 
         packages = []
@@ -425,6 +478,7 @@ class HacsRepositoryReader:
             return found
 
         packages = await self._hass.async_add_executor_job(_scan_dir)
+        _LOGGER.debug("Repositories directory scan: %d packages found", len(packages))
         return packages
 
     @staticmethod

@@ -87,12 +87,21 @@ class CompatibilityChecker:
         ha_next: str | None = None,
     ) -> CompatibilityResult:
         """Check compatibility of a single package."""
+        _LOGGER.debug(
+            "Checking compatibility for %s (%s, installed=%s, category=%s)",
+            package.full_name,
+            package.installed_version,
+            package.installed,
+            package.category,
+        )
+
         result = CompatibilityResult(
             package=package,
             last_checked=datetime.utcnow().isoformat(),
         )
 
         if self.should_ignore(package):
+            _LOGGER.debug("Package %s is in ignore list, skipping", package.full_name)
             result.status = "ignored"
             result.compatible_with_current = True
             result.compatible_with_next = True
@@ -100,14 +109,25 @@ class CompatibilityChecker:
 
         try:
             # Step 1: Get manifest for declared HA version requirement
+            _LOGGER.debug("Step 1: Fetching manifest for %s", package.full_name)
             manifest = await self._github.get_manifest(
                 package.owner, package.repo
             )
             if manifest:
                 result.manifest_ha_requirement = manifest.homeassistant
                 result.latest_version = manifest.version
+                _LOGGER.debug(
+                    "Manifest for %s: version=%s, ha_requirement=%s, requirements=%s",
+                    package.full_name,
+                    manifest.version,
+                    manifest.homeassistant,
+                    manifest.requirements,
+                )
+            else:
+                _LOGGER.debug("No manifest found for %s", package.full_name)
 
             # Step 2: Get latest release info
+            _LOGGER.debug("Step 2: Fetching releases for %s", package.full_name)
             releases = await self._github.get_releases(
                 package.owner, package.repo, per_page=5
             )
@@ -119,8 +139,17 @@ class CompatibilityChecker:
                         break
                 if latest_stable:
                     result.latest_version = result.latest_version or latest_stable.tag_name
+                _LOGGER.debug(
+                    "Releases for %s: %d total, latest_stable=%s",
+                    package.full_name,
+                    len(releases),
+                    latest_stable.tag_name if latest_stable else "none",
+                )
+            else:
+                _LOGGER.debug("No releases found for %s", package.full_name)
 
             # Step 3: Check manifest compatibility
+            _LOGGER.debug("Step 3: Checking manifest compatibility for %s", package.full_name)
             manifest_compatible_current = True
             manifest_compatible_next = True
 
@@ -128,13 +157,32 @@ class CompatibilityChecker:
                 manifest_compatible_current = self._check_version_requirement(
                     ha_current, result.manifest_ha_requirement
                 )
+                _LOGGER.debug(
+                    "Version check for %s: ha_current=%s vs requirement=%s -> compatible=%s",
+                    package.full_name,
+                    ha_current,
+                    result.manifest_ha_requirement,
+                    manifest_compatible_current,
+                )
                 if ha_next:
                     manifest_compatible_next = self._check_version_requirement(
                         ha_next, result.manifest_ha_requirement
                     )
+                    _LOGGER.debug(
+                        "Version check for %s: ha_next=%s vs requirement=%s -> compatible=%s",
+                        package.full_name,
+                        ha_next,
+                        result.manifest_ha_requirement,
+                        manifest_compatible_next,
+                    )
+            else:
+                _LOGGER.debug(
+                    "No HA version requirement for %s, assuming compatible",
+                    package.full_name,
+                )
 
             # Step 4: Check for relevant issues
-            # Calculate a reasonable "since" date (last 90 days)
+            _LOGGER.debug("Step 4: Checking issues for %s", package.full_name)
             from datetime import timedelta
             since_date = (datetime.utcnow() - timedelta(days=90)).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
@@ -159,8 +207,10 @@ class CompatibilityChecker:
                 }
                 for issue in issues
             ]
+            _LOGGER.debug("Found %d relevant issues for %s", len(issues), package.full_name)
 
             # Step 5: Determine overall compatibility status
+            _LOGGER.debug("Step 5: Determining status for %s", package.full_name)
             has_incompatible_issue = any(
                 issue.priority >= 15 for issue in issues
             )
@@ -174,6 +224,11 @@ class CompatibilityChecker:
                 for release in releases[:3]:
                     if self._contains_breaking_keywords(release.body):
                         release_breaking = True
+                        _LOGGER.debug(
+                            "Breaking keywords found in release %s for %s",
+                            release.tag_name,
+                            package.full_name,
+                        )
                         break
 
             # Determine final status
@@ -196,6 +251,18 @@ class CompatibilityChecker:
                 result.compatible_with_current = True
                 result.compatible_with_next = True
 
+            _LOGGER.info(
+                "Compatibility result for %s: status=%s, current=%s, next=%s, "
+                "issues=%d, manifest_ha=%s, latest_version=%s",
+                package.full_name,
+                result.status,
+                result.compatible_with_current,
+                result.compatible_with_next,
+                len(issues),
+                result.manifest_ha_requirement,
+                result.latest_version,
+            )
+
         except Exception as exc:
             _LOGGER.error(
                 "Error checking compatibility for %s: %s",
@@ -216,10 +283,29 @@ class CompatibilityChecker:
         ha_next: str | None = None,
     ) -> list[CompatibilityResult]:
         """Check compatibility for all packages."""
+        total = len(packages)
+        _LOGGER.info(
+            "Starting compatibility check for %d packages (ha_current=%s, ha_next=%s)",
+            total,
+            ha_current,
+            ha_next,
+        )
         results = []
-        for package in packages:
+        for idx, package in enumerate(packages, start=1):
+            _LOGGER.debug(
+                "Checking package %d/%d: %s", idx, total, package.full_name
+            )
             result = await self.check_package(package, ha_current, ha_next)
             results.append(result)
+
+        # Summary of statuses
+        status_counts: dict[str, int] = {}
+        for r in results:
+            status_counts[r.status] = status_counts.get(r.status, 0) + 1
+        _LOGGER.info(
+            "All packages checked. Status summary: %s",
+            status_counts,
+        )
         return results
 
     @staticmethod
@@ -285,24 +371,34 @@ class CompatibilityChecker:
             _LOGGER.warning("Cannot parse requirement version: %s", req_str)
             return True
 
+        result: bool
         if op == ">=":
-            return version >= req_ver
+            result = version >= req_ver
         elif op == ">":
-            return version > req_ver
+            result = version > req_ver
         elif op == "<=":
-            return version <= req_ver
+            result = version <= req_ver
         elif op == "<":
-            return version < req_ver
+            result = version < req_ver
         elif op == "==":
-            return version == req_ver
+            result = version == req_ver
         elif op == "!=":
-            return version != req_ver
+            result = version != req_ver
         elif op == "~=":
             # Compatible release
-            return version >= req_ver and version.release[:2] == req_ver.release[:2]
+            result = version >= req_ver and version.release[:2] == req_ver.release[:2]
         else:
             _LOGGER.warning("Unknown version operator: %s", op)
             return True
+
+        _LOGGER.debug(
+            "Version constraint check: %s %s %s -> %s",
+            version,
+            op,
+            req_ver,
+            result,
+        )
+        return result
 
     @staticmethod
     def _contains_breaking_keywords(text: str) -> bool:

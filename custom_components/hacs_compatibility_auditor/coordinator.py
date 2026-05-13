@@ -6,7 +6,7 @@ Manages periodic scanning and caching of compatibility data.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime as dt, timezone as tz 
 from typing import Any
 
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -119,6 +119,12 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
     async def _async_setup(self) -> None:
         """Set up the GitHub client and checker."""
+        _LOGGER.debug(
+            "Setting up GitHub client (timeout=%ds, retries=%d, cache_ttl=%dh)",
+            self._github_timeout,
+            self._github_retries,
+            self._cache_hours,
+        )
         session = async_create_clientsession(self.hass)
         self._github_client = GitHubClient(
             session=session,
@@ -128,6 +134,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         )
         self._github_client._cache_ttl = self._cache_hours * 3600
 
+        _LOGGER.debug(
+            "Creating CompatibilityChecker (labels=%s, ignore_list=%s)",
+            self._issue_labels_priority,
+            self._ignore_list,
+        )
         self._checker = CompatibilityChecker(
             github_client=self._github_client,
             issue_labels_priority=self._issue_labels_priority,
@@ -136,29 +147,51 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from all sources."""
+
+        scan_start = dt.now(tz.utc)
+        _LOGGER.info("=== Starting HACS compatibility scan ===")
+
         try:
             if not self._github_client:
+                _LOGGER.debug("GitHub client not initialized, running setup")
                 await self._async_setup()
 
             # Step 1: Get HA versions
+            _LOGGER.debug("Step 1/4: Retrieving Home Assistant versions")
             await self._update_ha_versions()
+            _LOGGER.info(
+                "HA versions — current: %s, next: %s (is_rc: %s)",
+                self._data.ha_current,
+                self._data.ha_next,
+                self._data.ha_next_is_rc,
+            )
 
             # Step 2: Get HACS packages
+            _LOGGER.debug("Step 2/4: Enumerating installed HACS packages")
             self._data.packages = await self._hacs_reader.get_installed_packages()
             self._data.packages_total = len(self._data.packages)
+            _LOGGER.info("Found %d installed HACS packages", self._data.packages_total)
 
             if not self._data.packages:
                 _LOGGER.warning("No HACS packages found")
 
             # Step 3: Check compatibility for each package
-            if self._checker:
+            if self._checker and self._data.packages:
+                _LOGGER.debug(
+                    "Step 3/4: Checking compatibility for %d packages",
+                    self._data.packages_total,
+                )
                 self._data.results = await self._checker.check_all_packages(
                     self._data.packages,
                     self._data.ha_current,
                     self._data.ha_next,
                 )
+                _LOGGER.debug("Compatibility checking complete for all packages")
+            elif not self._checker:
+                _LOGGER.warning("CompatibilityChecker not available, skipping checks")
 
             # Step 4: Compute summary stats
+            _LOGGER.debug("Step 4/4: Computing summary statistics")
             self._data.incompatible_count = sum(
                 1 for r in self._data.results if r.status == STATUS_INCOMPATIBLE
             )
@@ -172,21 +205,24 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 1 for r in self._data.results if r.status == STATUS_UNKNOWN
             )
 
-            from datetime import datetime
-            self._data.last_scan = datetime.utcnow().isoformat()
+            self._data.last_scan = dt.now(tz.utc).isoformat()
 
             _LOGGER.info(
-                "HACS compatibility scan complete: %d packages, %d incompatible, %d warnings, %d compatible",
+                "HACS compatibility scan complete: %d packages, %d incompatible, %d warnings, %d compatible, %d unknown",
                 self._data.packages_total,
                 self._data.incompatible_count,
                 self._data.warning_count,
                 self._data.compatible_count,
+                self._data.unknown_count,
             )
 
             return self._data.to_dict()
 
         except Exception as exc:
-            _LOGGER.error("Error updating HACS compatibility data: %s", exc)
+            elapsed = (dt.now(tz.utc) - scan_start).total_seconds()
+            _LOGGER.error(
+                "Error updating HACS compatibility data after %.1fs: %s", elapsed, exc
+            )
             raise UpdateFailed(f"Error updating HACS compatibility data: {exc}") from exc
 
     async def _update_ha_versions(self) -> None:
@@ -194,11 +230,15 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         # Current version from HA core
         from homeassistant.const import __version__ as ha_version
         self._data.ha_current = ha_version
+        _LOGGER.debug("Current HA version: %s", ha_version)
 
         # Next version from GitHub releases
         if self._github_client:
             try:
+                _LOGGER.debug("Fetching HA releases from GitHub (per_page=10)")
                 releases = await self._github_client.get_ha_releases(per_page=10)
+                _LOGGER.debug("Received %d HA releases from GitHub", len(releases))
+
                 current_ver = self._parse_simple_version(ha_version)
                 if current_ver is None:
                     _LOGGER.warning("Could not parse current HA version: %s", ha_version)
@@ -212,7 +252,15 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
                     rel_ver = self._parse_simple_version(tag)
                     if rel_ver is None:
+                        _LOGGER.debug("Skipping unparseable release tag: %s", tag)
                         continue
+
+                    _LOGGER.debug(
+                        "Evaluating release: %s (prerelease=%s, parsed=%s)",
+                        tag,
+                        release.prerelease,
+                        rel_ver,
+                    )
 
                     if rel_ver > current_ver:
                         if release.prerelease:
@@ -220,12 +268,21 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                             if self._data.ha_next is None:
                                 self._data.ha_next = tag
                                 self._data.ha_next_is_rc = True
+                                _LOGGER.debug(
+                                    "Found candidate next version (pre-release): %s", tag
+                                )
                         else:
                             self._data.ha_next = tag
                             self._data.ha_next_is_rc = False
+                            _LOGGER.debug("Found next stable version: %s", tag)
                             break  # First stable release > current is the "next" version
+
+                if self._data.ha_next is None:
+                    _LOGGER.debug("No newer HA version found beyond current %s", ha_version)
             except Exception as exc:
                 _LOGGER.warning("Could not determine next HA version: %s", exc)
+        else:
+            _LOGGER.warning("GitHub client not available, cannot determine next HA version")
 
     @staticmethod
     def _parse_simple_version(version_str: str) -> Any | None:
@@ -255,6 +312,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Forcing HACS compatibility re-check")
         # Clear cache to force fresh data
         if self._github_client:
+            cache_size = len(self._github_client._cache)
+            _LOGGER.debug("Clearing GitHub client cache (%d entries)", cache_size)
             self._github_client.clear_cache()
         await self.async_request_refresh()
 

@@ -93,15 +93,20 @@ class GitHubClient:
     async def validate_token(self) -> bool:
         """Validate the GitHub token by making a test request."""
         if not self._token:
+            _LOGGER.debug("No GitHub token configured, skipping validation")
             return True
+        _LOGGER.debug("Validating GitHub token")
         try:
             async with self._session.get(
                 f"{GITHUB_API_BASE}/user",
                 headers=self._get_headers(),
                 timeout=self._timeout,
             ) as resp:
-                return resp.status == 200
-        except (aiohttp.ClientError, asyncio.TimeoutError):
+                valid = resp.status == 200
+                _LOGGER.debug("GitHub token validation result: %s", valid)
+                return valid
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            _LOGGER.warning("GitHub token validation failed: %s", exc)
             return False
 
     def _is_cache_valid(self, key: str) -> bool:
@@ -115,15 +120,19 @@ class GitHubClient:
         """Get a cached value if valid."""
         if self._is_cache_valid(key):
             _, data = self._cache[key]
+            _LOGGER.debug("Cache HIT for key: %s", key)
             return data
+        _LOGGER.debug("Cache MISS for key: %s", key)
         return None
 
     def _set_cache(self, key: str, data: Any) -> None:
         """Store data in cache."""
         self._cache[key] = (time.time(), data)
+        _LOGGER.debug("Cached response for key: %s (cache size: %d)", key, len(self._cache))
 
     def clear_cache(self) -> None:
         """Clear the entire cache."""
+        _LOGGER.debug("Clearing cache (%d entries)", len(self._cache))
         self._cache.clear()
 
     async def _request(self, url: str) -> dict[str, Any] | list[Any] | None:
@@ -132,6 +141,12 @@ class GitHubClient:
         cached = self._get_cached(cache_key)
         if cached is not None:
             return cached
+
+        _LOGGER.debug(
+            "GitHub API request: %s (rate_limit_remaining=%d)",
+            url,
+            self._rate_limit_remaining,
+        )
 
         last_error: Exception | None = None
 
@@ -157,6 +172,13 @@ class GitHubClient:
                         self._rate_limit_remaining = int(remaining)
                     if reset is not None:
                         self._rate_limit_reset = float(reset)
+
+                    _LOGGER.debug(
+                        "GitHub API response: %s -> status=%d, rate_limit_remaining=%s",
+                        url,
+                        resp.status,
+                        remaining,
+                    )
 
                     if resp.status == 200:
                         data = await resp.json()
@@ -231,9 +253,11 @@ class GitHubClient:
     ) -> list[GitHubRelease]:
         """Get releases for a repository."""
         url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/releases?per_page={per_page}"
+        _LOGGER.debug("Fetching releases for %s/%s (per_page=%d)", owner, repo, per_page)
         data = await self._request(url)
 
         if not data or not isinstance(data, list):
+            _LOGGER.debug("No releases found for %s/%s", owner, repo)
             return []
 
         releases = []
@@ -248,22 +272,30 @@ class GitHubClient:
                     body=item.get("body", ""),
                 )
             )
+        _LOGGER.debug("Found %d releases for %s/%s", len(releases), owner, repo)
         return releases
 
     async def get_tags(self, owner: str, repo: str, per_page: int = 10) -> list[str]:
         """Get tags for a repository."""
         url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/tags?per_page={per_page}"
+        _LOGGER.debug("Fetching tags for %s/%s (per_page=%d)", owner, repo, per_page)
         data = await self._request(url)
 
         if not data or not isinstance(data, list):
+            _LOGGER.debug("No tags found for %s/%s", owner, repo)
             return []
 
-        return [tag.get("name", "") for tag in data if tag.get("name")]
+        tags = [tag.get("name", "") for tag in data if tag.get("name")]
+        _LOGGER.debug("Found %d tags for %s/%s", len(tags), owner, repo)
+        return tags
 
     async def get_manifest(self, owner: str, repo: str) -> GitHubManifest | None:
         """Get the HACS manifest.json from a repository."""
+        _LOGGER.debug("Fetching manifest for %s/%s", owner, repo)
+
         # Try hacs.json first (HACS v2 format)
         url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/hacs.json"
+        _LOGGER.debug("Trying hacs.json: %s", url)
         data = await self._request(url)
 
         if data and isinstance(data, dict) and "content" in data:
@@ -273,7 +305,7 @@ class GitHubClient:
 
                 content = base64.b64decode(data["content"]).decode("utf-8")
                 manifest_data = json.loads(content)
-                return GitHubManifest(
+                manifest = GitHubManifest(
                     name=manifest_data.get("name", ""),
                     version=manifest_data.get("version", ""),
                     homeassistant=manifest_data.get("homeassistant", ""),
@@ -281,6 +313,15 @@ class GitHubClient:
                     zip_release=manifest_data.get("zip_release", False),
                     filename=manifest_data.get("filename", ""),
                 )
+                _LOGGER.debug(
+                    "Found hacs.json for %s/%s (name=%s, version=%s, ha_req=%s)",
+                    owner,
+                    repo,
+                    manifest.name,
+                    manifest.version,
+                    manifest.homeassistant,
+                )
+                return manifest
             except (json.JSONDecodeError, KeyError, ValueError) as exc:
                 _LOGGER.debug(
                     "Failed to parse hacs.json for %s/%s: %s", owner, repo, exc
@@ -288,6 +329,7 @@ class GitHubClient:
 
         # Fallback: try manifest.json (custom component format)
         url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/custom_components/{repo}/manifest.json"
+        _LOGGER.debug("Trying manifest.json fallback: %s", url)
         data = await self._request(url)
 
         if data and isinstance(data, dict) and "content" in data:
@@ -297,17 +339,27 @@ class GitHubClient:
 
                 content = base64.b64decode(data["content"]).decode("utf-8")
                 manifest_data = json.loads(content)
-                return GitHubManifest(
+                manifest = GitHubManifest(
                     name=manifest_data.get("name", ""),
                     version=manifest_data.get("version", ""),
                     homeassistant=manifest_data.get("homeassistant", ""),
                     requirements=manifest_data.get("requirements", []),
                 )
+                _LOGGER.debug(
+                    "Found manifest.json for %s/%s (name=%s, version=%s, ha_req=%s)",
+                    owner,
+                    repo,
+                    manifest.name,
+                    manifest.version,
+                    manifest.homeassistant,
+                )
+                return manifest
             except (json.JSONDecodeError, KeyError, ValueError) as exc:
                 _LOGGER.debug(
                     "Failed to parse manifest.json for %s/%s: %s", owner, repo, exc
                 )
 
+        _LOGGER.debug("No manifest found for %s/%s", owner, repo)
         return None
 
     async def get_issues(
@@ -321,6 +373,15 @@ class GitHubClient:
         since: str | None = None,
     ) -> list[GitHubIssue]:
         """Search for issues related to compatibility in a repository."""
+        _LOGGER.debug(
+            "Fetching issues for %s/%s (labels=%s, keywords=%s, state=%s, since=%s)",
+            owner,
+            repo,
+            labels,
+            keywords,
+            state,
+            since,
+        )
         all_issues: list[GitHubIssue] = []
 
         # First, search by labels if provided
@@ -333,8 +394,10 @@ class GitHubClient:
                 if since:
                     url += f"&since={since}"
 
+                _LOGGER.debug("Searching issues by label '%s' for %s/%s", label, owner, repo)
                 data = await self._request(url)
                 if data and isinstance(data, list):
+                    count = 0
                     for item in data:
                         # Skip PRs
                         if "pull_request" in item:
@@ -356,6 +419,14 @@ class GitHubClient:
                                 ),
                             )
                         )
+                        count += 1
+                    _LOGGER.debug(
+                        "Found %d issues for label '%s' in %s/%s",
+                        count,
+                        label,
+                        owner,
+                        repo,
+                    )
 
         # Also search using GitHub search API for keywords
         if keywords:
@@ -367,8 +438,12 @@ class GitHubClient:
                     f"{GITHUB_API_BASE}/search/issues"
                     f"?q={search_query}&per_page={per_page}"
                 )
+                _LOGGER.debug(
+                    "Searching issues by keyword '%s' for %s/%s", keyword, owner, repo
+                )
                 data = await self._request(url)
                 if data and isinstance(data, dict) and "items" in data:
+                    count = 0
                     for item in data["items"]:
                         issue_labels = [
                             lbl.get("name", "")
@@ -392,6 +467,14 @@ class GitHubClient:
                                 ),
                             )
                         )
+                        count += 1
+                    _LOGGER.debug(
+                        "Found %d issues for keyword '%s' in %s/%s",
+                        count,
+                        keyword,
+                        owner,
+                        repo,
+                    )
 
         # Sort by priority (highest first) and deduplicate
         seen_urls: set[str] = set()
@@ -401,11 +484,22 @@ class GitHubClient:
                 seen_urls.add(issue.url)
                 unique_issues.append(issue)
 
-        return unique_issues[:20]  # Limit to top 20 most relevant
+        result = unique_issues[:20]  # Limit to top 20 most relevant
+        _LOGGER.debug(
+            "Total unique issues for %s/%s: %d (from %d raw)",
+            owner,
+            repo,
+            len(result),
+            len(all_issues),
+        )
+        return result
 
     async def get_ha_releases(self, per_page: int = 5) -> list[GitHubRelease]:
         """Get Home Assistant core releases."""
-        return await self.get_releases("home-assistant", "core", per_page)
+        _LOGGER.debug("Fetching Home Assistant core releases (per_page=%d)", per_page)
+        releases = await self.get_releases("home-assistant", "core", per_page)
+        _LOGGER.debug("Found %d HA core releases", len(releases))
+        return releases
 
     def _calculate_issue_priority(
         self, issue_labels: list[str], matched_label: str
