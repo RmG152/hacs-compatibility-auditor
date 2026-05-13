@@ -1,0 +1,7 @@
+{
+  "name": "HACS Compatibility Auditor",
+  "content_in_root": false,
+  "zip_release": true,
+  "filename": "hacs-compatibility-auditor.zip",
+  "render_readme": true
+}

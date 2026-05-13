@@ -1,0 +1,7 @@
+check_now:
+  name: Forzar comprobación
+  description: Fuerza una re-comprobación inmediata de la compatibilidad de todos los paquetes HACS instalados.
+  target:
+    entity:
+      domain: sensor
+      integration: hacs_compatibility_auditor
