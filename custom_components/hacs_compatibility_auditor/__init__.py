@@ -5,20 +5,21 @@ HACS-installed packages, and verifies compatibility by consulting GitHub
 issues, release notes, and manifest metadata.
 """
 
-from __future__ import annotations
-
 import logging
-from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_GITHUB_TOKEN, DOMAIN, PLATFORMS, SERVICE_CHECK_NOW
+from .const import DOMAIN, PLATFORMS, SERVICE_CHECK_NOW
 from .coordinator import HacsCompatibilityCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -86,9 +87,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def _async_update_listener(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> None:
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
     _LOGGER.info("HACS Compatibility Auditor options updated")
     coordinator: HacsCompatibilityCoordinator = hass.data[DOMAIN][entry.entry_id]

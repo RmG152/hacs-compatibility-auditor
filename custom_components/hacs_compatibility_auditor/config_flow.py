@@ -1,14 +1,12 @@
 """Config flow for HACS Compatibility Auditor integration."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
@@ -42,14 +40,14 @@ async def _validate_github_token(
     client = GitHubClient(session=session, token=token)
     try:
         valid = await client.validate_token()
-        if not valid:
-            return False, "invalid_token"
-        return True, None
-    except Exception as exc:
+    except (TimeoutError, aiohttp.ClientError) as exc:
         _LOGGER.error("Error validating GitHub token: %s", exc)
         return False, "cannot_connect"
     finally:
         await client.close()
+    if not valid:
+        return False, "invalid_token"
+    return True, None
 
 
 async def _validate_hacs(hass: HomeAssistant) -> bool:
@@ -58,10 +56,7 @@ async def _validate_hacs(hass: HomeAssistant) -> bool:
         hacs = hass.data.get("hacs")
         if hacs is not None:
             return True
-        # Also check via custom_components
-        from custom_components.hacs.const import DOMAIN as HACS_DOMAIN  # noqa: F401
 
-        return True
     except ImportError:
         return False
 
@@ -119,9 +114,9 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
                 vol.Optional(
                     CONF_CHECK_INTERVAL, default=DEFAULT_CHECK_INTERVAL
                 ): vol.All(int, vol.Range(min=1, max=168)),
-                vol.Optional(
-                    CONF_CACHE_HOURS, default=DEFAULT_CACHE_HOURS
-                ): vol.All(int, vol.Range(min=1, max=72)),
+                vol.Optional(CONF_CACHE_HOURS, default=DEFAULT_CACHE_HOURS): vol.All(
+                    int, vol.Range(min=1, max=72)
+                ),
                 vol.Optional(
                     CONF_GITHUB_TIMEOUT, default=DEFAULT_GITHUB_TIMEOUT
                 ): vol.All(int, vol.Range(min=5, max=120)),
@@ -171,7 +166,9 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 issue_labels = user_input.get(CONF_ISSUE_LABELS_PRIORITY, "")
                 if isinstance(issue_labels, str):
                     issue_labels = [
-                        l.strip() for l in issue_labels.split(",") if l.strip()
+                        label.strip()
+                        for label in issue_labels.split(",")
+                        if label.strip()
                     ]
 
                 ignore_list = user_input.get(CONF_IGNORE_LIST, "")
@@ -183,9 +180,8 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 return self.async_create_entry(
                     title="",
                     data={
-                        CONF_GITHUB_TOKEN: token or self.config_entry.data.get(
-                            CONF_GITHUB_TOKEN, ""
-                        ),
+                        CONF_GITHUB_TOKEN: token
+                        or self.config_entry.data.get(CONF_GITHUB_TOKEN, ""),
                         CONF_CHECK_INTERVAL: user_input.get(
                             CONF_CHECK_INTERVAL,
                             self.config_entry.options.get(
@@ -226,7 +222,9 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 ): str,
                 vol.Optional(
                     CONF_CHECK_INTERVAL,
-                    default=current_options.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL),
+                    default=current_options.get(
+                        CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
+                    ),
                 ): vol.All(int, vol.Range(min=1, max=168)),
                 vol.Optional(
                     CONF_CACHE_HOURS,
@@ -240,9 +238,7 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 ): str,
                 vol.Optional(
                     CONF_IGNORE_LIST,
-                    default=",".join(
-                        current_options.get(CONF_IGNORE_LIST, [])
-                    ),
+                    default=",".join(current_options.get(CONF_IGNORE_LIST, [])),
                 ): str,
                 vol.Optional(
                     CONF_GITHUB_TIMEOUT,

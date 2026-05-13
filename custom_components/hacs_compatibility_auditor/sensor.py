@@ -1,7 +1,5 @@
 """Sensor platform for HACS Compatibility Auditor."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
@@ -90,11 +88,11 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
         key = self.entity_description.key
         if key == "ha_version_current":
             return data.get("ha_current")
-        elif key == "ha_version_next":
+        if key == "ha_version_next":
             return data.get("ha_next")
-        elif key == "hacs_packages_total":
+        if key == "hacs_packages_total":
             return data.get("packages_total", 0)
-        elif key == "hacs_incompatible_count":
+        if key == "hacs_incompatible_count":
             return data.get("incompatible_count", 0)
         return None
 
@@ -170,7 +168,13 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
         slug = self._package_full_name.replace("/", "_").lower()
         self._attr_unique_id = f"{DOMAIN}_package_{slug}"
         self._attr_name = f"hca_package_{slug}"
-        self._attr_options = [STATUS_COMPATIBLE, STATUS_WARNING, STATUS_INCOMPATIBLE, STATUS_UNKNOWN, "ignored"]
+        self._attr_options = [
+            STATUS_COMPATIBLE,
+            STATUS_WARNING,
+            STATUS_INCOMPATIBLE,
+            STATUS_UNKNOWN,
+            "ignored",
+        ]
         self._package_data = package_data
 
     @callback
@@ -193,7 +197,7 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed package attributes."""
         data = self._package_data
-        attrs = {
+        return {
             "name": data.get("name", ""),
             "repository": data.get("repository", ""),
             "type": data.get("type", ""),
@@ -207,7 +211,6 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
             "error": data.get("error", ""),
             "repository_url": f"https://github.com/{self._package_full_name}",
         }
-        return attrs
 
     @property
     def icon(self) -> str:
@@ -215,11 +218,11 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
         status = self.native_value
         if status == STATUS_COMPATIBLE:
             return "mdi:check-circle"
-        elif status == STATUS_WARNING:
+        if status == STATUS_WARNING:
             return "mdi:alert"
-        elif status == STATUS_INCOMPATIBLE:
+        if status == STATUS_INCOMPATIBLE:
             return "mdi:close-circle"
-        elif status == "ignored":
+        if status == "ignored":
             return "mdi:eye-off"
         return "mdi:help-circle"
 
@@ -238,14 +241,17 @@ async def async_setup_entry(
     entities: list[SensorEntity] = []
 
     # Add global sensors
-    for description in GLOBAL_SENSOR_DESCRIPTIONS:
-        entities.append(HacsCompatibilityGlobalSensor(coordinator, description))
+    entities.extend(
+        HacsCompatibilityGlobalSensor(coordinator, description)
+        for description in GLOBAL_SENSOR_DESCRIPTIONS
+    )
 
     # Add per-package sensors
     data = coordinator.data
     if data:
-        for result in data.get("results", []):
-            entities.append(HacsPackageSensor(coordinator, result))
+        entities.extend(
+            HacsPackageSensor(coordinator, result) for result in data.get("results", [])
+        )
 
     async_add_entities(entities, True)
 
@@ -275,8 +281,7 @@ def _async_update_package_sensors(
     existing_uids = {
         entity.unique_id
         for entity in entity_registry.entities.values()
-        if entity.config_entry_id == entry.entry_id
-        and entity.platform == DOMAIN
+        if entity.config_entry_id == entry.entry_id and entity.platform == DOMAIN
     }
 
     new_entities: list[SensorEntity] = []

@@ -4,14 +4,14 @@ This module contains the core algorithm for determining whether a HACS package
 is compatible with the current and next versions of Home Assistant.
 """
 
-from __future__ import annotations
-
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+import json
 import logging
 import re
-from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
+import aiohttp
 from packaging.version import InvalidVersion, Version, parse as parse_version
 
 from .const import (
@@ -22,7 +22,7 @@ from .const import (
     STATUS_UNKNOWN,
     STATUS_WARNING,
 )
-from .github_client import GitHubClient, GitHubIssue, GitHubManifest, GitHubRelease
+from .github_client import GitHubClient
 from .hacs_repository import HacsPackage
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,9 +76,20 @@ class CompatibilityChecker:
         self._issue_keywords = issue_keywords or DEFAULT_ISSUE_KEYWORDS
         self._ignore_list = set(ignore_list or [])
 
+    def update_config(
+        self,
+        issue_labels_priority: list[str],
+        ignore_list: list[str],
+    ) -> None:
+        """Update checker configuration."""
+        self._issue_labels = issue_labels_priority
+        self._ignore_list = set(ignore_list)
+
     def should_ignore(self, package: HacsPackage) -> bool:
         """Check if a package should be ignored."""
-        return package.full_name in self._ignore_list or package.name in self._ignore_list
+        return (
+            package.full_name in self._ignore_list or package.name in self._ignore_list
+        )
 
     async def check_package(
         self,
@@ -97,7 +108,7 @@ class CompatibilityChecker:
 
         result = CompatibilityResult(
             package=package,
-            last_checked=datetime.utcnow().isoformat(),
+            last_checked=datetime.now(tz=UTC).isoformat(),
         )
 
         if self.should_ignore(package):
@@ -110,9 +121,7 @@ class CompatibilityChecker:
         try:
             # Step 1: Get manifest for declared HA version requirement
             _LOGGER.debug("Step 1: Fetching manifest for %s", package.full_name)
-            manifest = await self._github.get_manifest(
-                package.owner, package.repo
-            )
+            manifest = await self._github.get_manifest(package.owner, package.repo)
             if manifest:
                 result.manifest_ha_requirement = manifest.homeassistant
                 result.latest_version = manifest.version
@@ -138,7 +147,9 @@ class CompatibilityChecker:
                         latest_stable = release
                         break
                 if latest_stable:
-                    result.latest_version = result.latest_version or latest_stable.tag_name
+                    result.latest_version = (
+                        result.latest_version or latest_stable.tag_name
+                    )
                 _LOGGER.debug(
                     "Releases for %s: %d total, latest_stable=%s",
                     package.full_name,
@@ -149,7 +160,9 @@ class CompatibilityChecker:
                 _LOGGER.debug("No releases found for %s", package.full_name)
 
             # Step 3: Check manifest compatibility
-            _LOGGER.debug("Step 3: Checking manifest compatibility for %s", package.full_name)
+            _LOGGER.debug(
+                "Step 3: Checking manifest compatibility for %s", package.full_name
+            )
             manifest_compatible_current = True
             manifest_compatible_next = True
 
@@ -183,8 +196,8 @@ class CompatibilityChecker:
 
             # Step 4: Check for relevant issues
             _LOGGER.debug("Step 4: Checking issues for %s", package.full_name)
-            from datetime import timedelta
-            since_date = (datetime.utcnow() - timedelta(days=90)).strftime(
+
+            since_date = (datetime.now(UTC) - timedelta(days=90)).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
             )
 
@@ -207,16 +220,14 @@ class CompatibilityChecker:
                 }
                 for issue in issues
             ]
-            _LOGGER.debug("Found %d relevant issues for %s", len(issues), package.full_name)
+            _LOGGER.debug(
+                "Found %d relevant issues for %s", len(issues), package.full_name
+            )
 
             # Step 5: Determine overall compatibility status
             _LOGGER.debug("Step 5: Determining status for %s", package.full_name)
-            has_incompatible_issue = any(
-                issue.priority >= 15 for issue in issues
-            )
-            has_warning_issue = any(
-                5 <= issue.priority < 15 for issue in issues
-            )
+            has_incompatible_issue = any(issue.priority >= 15 for issue in issues)
+            has_warning_issue = any(5 <= issue.priority < 15 for issue in issues)
 
             # Check release notes for breaking change mentions
             release_breaking = False
@@ -244,8 +255,12 @@ class CompatibilityChecker:
                 or release_breaking
             ):
                 result.status = STATUS_WARNING
-                result.compatible_with_current = manifest_compatible_current and not has_warning_issue
-                result.compatible_with_next = manifest_compatible_next and not release_breaking
+                result.compatible_with_current = (
+                    manifest_compatible_current and not has_warning_issue
+                )
+                result.compatible_with_next = (
+                    manifest_compatible_next and not release_breaking
+                )
             else:
                 result.status = STATUS_COMPATIBLE
                 result.compatible_with_current = True
@@ -263,7 +278,14 @@ class CompatibilityChecker:
                 result.latest_version,
             )
 
-        except Exception as exc:
+        except (
+            TimeoutError,
+            aiohttp.ClientError,
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
             _LOGGER.error(
                 "Error checking compatibility for %s: %s",
                 package.full_name,
@@ -292,9 +314,7 @@ class CompatibilityChecker:
         )
         results = []
         for idx, package in enumerate(packages, start=1):
-            _LOGGER.debug(
-                "Checking package %d/%d: %s", idx, total, package.full_name
-            )
+            _LOGGER.debug("Checking package %d/%d: %s", idx, total, package.full_name)
             result = await self.check_package(package, ha_current, ha_next)
             results.append(result)
 
@@ -309,9 +329,7 @@ class CompatibilityChecker:
         return results
 
     @staticmethod
-    def _check_version_requirement(
-        ha_version: str, requirement: str
-    ) -> bool:
+    def _check_version_requirement(ha_version: str, requirement: str) -> bool:
         """Check if a HA version satisfies a requirement string.
 
         The requirement can be in various formats:
@@ -325,7 +343,7 @@ class CompatibilityChecker:
 
         try:
             ha_ver = CompatibilityChecker._parse_ha_version(ha_version)
-        except (InvalidVersion, ValueError):
+        except InvalidVersion, ValueError:
             _LOGGER.warning("Cannot parse HA version: %s", ha_version)
             return True
 
@@ -356,7 +374,7 @@ class CompatibilityChecker:
         constraint = constraint.strip()
 
         # Extract operator and version
-        match = re.match(r"^([<>=!]+)\s*(.+)$", constraint)
+        match = re.match(r"^([<>=!~]+)\s*(.+)$", constraint)
         if match:
             op = match.group(1)
             req_str = match.group(2)
@@ -367,7 +385,7 @@ class CompatibilityChecker:
 
         try:
             req_ver = CompatibilityChecker._parse_ha_version(req_str)
-        except (InvalidVersion, ValueError):
+        except InvalidVersion, ValueError:
             _LOGGER.warning("Cannot parse requirement version: %s", req_str)
             return True
 

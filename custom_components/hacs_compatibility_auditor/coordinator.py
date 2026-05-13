@@ -3,19 +3,19 @@
 Manages periodic scanning and caching of compatibility data.
 """
 
-from __future__ import annotations
-
 import asyncio
+from datetime import UTC, datetime as dt, timedelta
 import logging
-from datetime import timedelta, datetime as dt, timezone as tz
+import re
 from typing import Any
 
-from homeassistant.core import HomeAssistant, ServiceCall
+import aiohttp
+from packaging.version import InvalidVersion, parse as parse_version
+
+from homeassistant.const import __version__ as ha_version
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .compatibility import CompatibilityChecker, CompatibilityResult
 from .const import (
@@ -90,6 +90,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         self._github_client: GitHubClient | None = None
         self._checker: CompatibilityChecker | None = None
         self._hacs_reader = HacsRepositoryReader(hass)
+        self._scan_lock = asyncio.Lock()
 
         # Read config
         entry_data = config_entry.data
@@ -137,7 +138,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             timeout=self._github_timeout,
             retries=self._github_retries,
         )
-        self._github_client._cache_ttl = self._cache_hours * 3600
+        self._github_client.update_cache_ttl(self._cache_hours * 3600)
 
         _LOGGER.debug(
             "Creating CompatibilityChecker (labels=%s, ignore_list=%s)",
@@ -154,13 +155,10 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         """Fetch data from all sources."""
 
         # Use a lock to prevent concurrent scans
-        if hasattr(self, "_scan_lock") and self._scan_lock.locked():
+        if self._scan_lock.locked():
             _LOGGER.debug("Scan already in progress, waiting for it to complete")
             async with self._scan_lock:
                 return self._data.to_dict()
-
-        if not hasattr(self, "_scan_lock"):
-            self._scan_lock = asyncio.Lock()
 
         async with self._scan_lock:
             return await self._async_update_data_impl()
@@ -168,7 +166,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
     async def _async_update_data_impl(self) -> dict[str, Any]:
         """Internal implementation of data update."""
 
-        scan_start = dt.now(tz.utc)
+        scan_start = dt.now(UTC)
         _LOGGER.info("=== Starting HACS compatibility scan ===")
 
         try:
@@ -225,7 +223,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 1 for r in self._data.results if r.status == STATUS_UNKNOWN
             )
 
-            self._data.last_scan = dt.now(tz.utc).isoformat()
+            self._data.last_scan = dt.now(UTC).isoformat()
 
             _LOGGER.info(
                 "HACS compatibility scan complete: %d packages, %d incompatible, %d warnings, %d compatible, %d unknown",
@@ -239,16 +237,17 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             return self._data.to_dict()
 
         except Exception as exc:
-            elapsed = (dt.now(tz.utc) - scan_start).total_seconds()
+            elapsed = (dt.now(UTC) - scan_start).total_seconds()
             _LOGGER.error(
                 "Error updating HACS compatibility data after %.1fs: %s", elapsed, exc
             )
-            raise UpdateFailed(f"Error updating HACS compatibility data: {exc}") from exc
+            raise UpdateFailed(
+                f"Error updating HACS compatibility data: {exc}"
+            ) from exc
 
     async def _update_ha_versions(self) -> None:
         """Update HA current and next versions."""
         # Current version from HA core
-        from homeassistant.const import __version__ as ha_version
         self._data.ha_current = ha_version
         _LOGGER.debug("Current HA version: %s", ha_version)
 
@@ -261,14 +260,13 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
                 current_ver = self._parse_simple_version(ha_version)
                 if current_ver is None:
-                    _LOGGER.warning("Could not parse current HA version: %s", ha_version)
+                    _LOGGER.warning(
+                        "Could not parse current HA version: %s", ha_version
+                    )
                     return
 
                 for release in releases:
-                    tag = release.tag_name
-                    # Strip 'v' prefix if present
-                    if tag.startswith("v"):
-                        tag = tag[1:]
+                    tag = release.tag_name.removeprefix("v")
 
                     rel_ver = self._parse_simple_version(tag)
                     if rel_ver is None:
@@ -289,7 +287,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                                 self._data.ha_next = tag
                                 self._data.ha_next_is_rc = True
                                 _LOGGER.debug(
-                                    "Found candidate next version (pre-release): %s", tag
+                                    "Found candidate next version (pre-release): %s",
+                                    tag,
                                 )
                         else:
                             self._data.ha_next = tag
@@ -298,17 +297,19 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                             break  # First stable release > current is the "next" version
 
                 if self._data.ha_next is None:
-                    _LOGGER.debug("No newer HA version found beyond current %s", ha_version)
-            except Exception as exc:
+                    _LOGGER.debug(
+                        "No newer HA version found beyond current %s", ha_version
+                    )
+            except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 _LOGGER.warning("Could not determine next HA version: %s", exc)
         else:
-            _LOGGER.warning("GitHub client not available, cannot determine next HA version")
+            _LOGGER.warning(
+                "GitHub client not available, cannot determine next HA version"
+            )
 
     @staticmethod
     def _parse_simple_version(version_str: str) -> Any | None:
         """Parse a version string for comparison, returning None on failure."""
-        import re
-        from packaging.version import InvalidVersion, parse as parse_version
 
         try:
             cleaned = version_str.strip()
@@ -319,7 +320,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             if not cleaned:
                 return None
             return parse_version(cleaned)
-        except (InvalidVersion, ValueError):
+        except InvalidVersion, ValueError:
             return None
 
     @property
@@ -332,8 +333,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Forcing HACS compatibility re-check")
         # Clear cache to force fresh data
         if self._github_client:
-            cache_size = len(self._github_client._cache)
-            _LOGGER.debug("Clearing GitHub client cache (%d entries)", cache_size)
+            _LOGGER.debug("Clearing GitHub client cache")
             self._github_client.clear_cache()
         await self.async_request_refresh()
 
@@ -357,9 +357,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
         # Update cache TTL
         if self._github_client:
-            self._github_client._cache_ttl = self._cache_hours * 3600
+            self._github_client.update_cache_ttl(self._cache_hours * 3600)
 
         # Update checker
         if self._checker:
-            self._checker._issue_labels = self._issue_labels_priority
-            self._checker._ignore_list = set(self._ignore_list)
+            self._checker.update_config(self._issue_labels_priority, self._ignore_list)
