@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Update manifest.json version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          python -c "
+import json
+path = 'custom_components/hacs_compatibility_auditor/manifest.json'
+with open(path) as f:
+    manifest = json.load(f)
+manifest['version'] = '$VERSION'
+with open(path, 'w') as f:
+    json.dump(manifest, f, indent=2)
+    f.write('\n')
+"
+
+      - name: Create release zip
+        run: |
+          zip -r hacs-compatibility-auditor.zip \
+            custom_components/hacs_compatibility_auditor/ \
+            -x "*/__pycache__/*" "*.pyc" ".DS_Store"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: hacs-compatibility-auditor.zip
+          generate_release_notes: true

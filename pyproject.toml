@@ -1,0 +1,8 @@
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+src = ["custom_components"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
