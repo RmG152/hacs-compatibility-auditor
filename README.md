@@ -2,116 +2,116 @@
 
 [![HACS Integration](https://img.shields.io/badge/HACS-Integration-blue.svg)](https://hacs.xyz)
 
-Integración de Home Assistant que detecta la versión actual y la próxima versión de Home Assistant, lista todas las integraciones y tarjetas instaladas desde HACS y verifica la compatibilidad de cada paquete consultando sus issues y metadatos en GitHub.
+Home Assistant integration that detects the current and next version of Home Assistant, lists all integrations and cards installed via HACS, and checks each package's compatibility by querying their GitHub issues and metadata.
 
-## Características
+## Features
 
-- **Detección automática de versiones**: Identifica la versión actual de Home Assistant y la próxima versión disponible (incluyendo release candidates).
-- **Enumeración de paquetes HACS**: Lista todas las integraciones, tarjetas, temas y otros paquetes instalados desde HACS.
-- **Verificación de compatibilidad**: Evalúa cada paquete contra la versión actual y la siguiente de Home Assistant.
-- **Análisis de issues en GitHub**: Revisa issues abiertos y recientes para detectar reportes de incompatibilidad, notas de breaking changes y PRs relevantes.
-- **Notificaciones**: Eventos automáticos cuando se detectan incompatibilidades con la próxima versión de HA.
-- **Servicio de re-escaneo**: Fuerza una comprobación inmediata con el servicio `hacs_compatibility_auditor.check_now`.
-- **Lovelace Card**: Incluye una tarjeta personalizada con resumen filtrable, enlaces a repositorios y acciones rápidas. → [Repositorio de la card](https://github.com/RmG152/hacs-compatibility-auditor-card)
+- **Automatic version detection**: Identifies the current Home Assistant version and the next available version (including release candidates).
+- **HACS package enumeration**: Lists all integrations, cards, themes, and other packages installed from HACS.
+- **Compatibility verification**: Evaluates each package against the current and next Home Assistant versions.
+- **GitHub issue analysis**: Reviews open and recent issues for incompatibility reports, breaking change notes, and relevant PRs.
+- **Notifications**: Automatic events when incompatibilities are detected with the next HA version.
+- **Re-scan service**: Force an immediate compatibility check with the `hacs_compatibility_auditor.check_now` service.
+- **Lovelace Card**: Includes a custom card with filterable summary, repository links, and quick actions. → [Card repository](https://github.com/RmG152/hacs-compatibility-auditor-card)
 
-## Sensores
+## Sensors
 
-La integración crea los siguientes sensores:
+The integration creates the following sensors:
 
-| Sensor | Descripción |
+| Sensor | Description |
 |--------|-------------|
-| `sensor.ha_version_current` | Versión actual de Home Assistant |
-| `sensor.ha_version_next` | Próxima versión disponible (RC o estable) |
-| `sensor.hacs_packages_total` | Número total de paquetes HACS instalados |
-| `sensor.hacs_incompatible_count` | Número de paquetes incompatibles |
+| `sensor.ha_version_current` | Current Home Assistant version |
+| `sensor.ha_version_next` | Next available version (RC or stable) |
+| `sensor.hacs_packages_total` | Total number of installed HACS packages |
+| `sensor.hacs_incompatible_count` | Number of incompatible packages |
 
-Además, se crea un sensor por cada paquete HACS instalado (`sensor.hacs_compatibility_auditor_package_*`).
+Additionally, one sensor is created per installed HACS package (`sensor.hacs_compatibility_auditor_package_*`).
 
-## Instalación
+## Installation
 
-### Vía HACS (recomendado)
+### Via HACS (recommended)
 
-1. Añade este repositorio como **custom repository** en HACS:
-   - HACS → Integraciones → Menú (⋮) → Custom repositories
+1. Add this repository as a **custom repository** in HACS:
+   - HACS → Integrations → Menu (⋮) → Custom repositories
    - URL: `https://github.com/RmG152/hacs-compatibility-auditor`
-   - Categoría: **Integration**
-2. Busca "HACS Compatibility Auditor" en HACS → Integraciones.
-3. Haz clic en **Instalar**.
-4. **Reinicia Home Assistant**.
-5. Ve a **Configuración → Dispositivos y servicios → Añadir integración** y busca "HACS Compatibility Auditor".
+   - Category: **Integration**
+2. Search for "HACS Compatibility Auditor" in HACS → Integrations.
+3. Click **Install**.
+4. **Restart Home Assistant**.
+5. Go to **Settings → Devices & Services → Add Integration** and search for "HACS Compatibility Auditor".
 
-### Instalación manual
+### Manual installation
 
-1. Copia la carpeta `custom_components/hacs_compatibility_auditor/` a tu directorio `custom_components/`.
-2. Reinicia Home Assistant.
-3. Añade la integración desde Configuración → Integraciones.
+1. Copy the `custom_components/hacs_compatibility_auditor/` folder to your `custom_components/` directory.
+2. Restart Home Assistant.
+3. Add the integration from Settings → Integrations.
 
 ## Lovelace Card
 
-La integración incluye una tarjeta Lovelace en un repositorio separado:
+The integration includes a Lovelace card in a separate repository:
 
 > **https://github.com/RmG152/hacs-compatibility-auditor-card**
 
-Sigue las instrucciones de instalación y configuración en el README de ese repositorio.
+Follow the installation and configuration instructions in that repository's README.
 
-## Configuración
+## Configuration
 
 ### Config Flow
 
-1. **Token de GitHub** (opcional): Sin token, la API de GitHub permite ~60 peticiones/hora. Con token, ~5000 peticiones/hora. Recomendado para instalaciones con muchos paquetes.
-2. **Intervalo de comprobación**: Cada cuántas horas se ejecuta el escaneo automático (por defecto: 12h).
-3. **Horas de caché**: Tiempo de caché para consultas a GitHub (por defecto: 12h).
-4. **Timeout de GitHub**: Timeout en segundos para consultas (por defecto: 15s).
-5. **Reintentos de GitHub**: Número de reintentos ante errores (por defecto: 3).
+1. **GitHub Token** (optional): Without a token, the GitHub API allows ~60 requests/hour. With a token, ~5000 requests/hour. Recommended for installations with many packages.
+2. **Check interval**: How often the automatic scan runs (default: 12h).
+3. **Cache hours**: Cache time for GitHub queries (default: 12h).
+4. **GitHub timeout**: Timeout in seconds for queries (default: 15s).
+5. **GitHub retries**: Number of retries on errors (default: 3).
 
-### Opciones avanzadas
+### Advanced options
 
-Accede a las opciones desde Configuración → Integraciones → HACS Compatibility Auditor → Configurar:
+Access options from Settings → Integrations → HACS Compatibility Auditor → Configure:
 
-- **Labels de prioridad**: Labels de GitHub que indican alta severidad (separadas por coma). Por defecto: `breaking-change,breaking,incompatible,upgrade,compatibility`.
-- **Lista de ignorados**: Nombres de repositorios a ignorar (separados por coma).
+- **Priority labels**: GitHub labels that indicate high severity (comma-separated). Default: `breaking-change,breaking,incompatible,upgrade,compatibility`.
+- **Ignore list**: Repository names to ignore (comma-separated).
 
-### Token de GitHub
+### GitHub Token
 
-1. Ve a [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens).
-2. Crea un nuevo token (classic) con permisos mínimos: `public_repo` (solo lectura).
-3. Copia el token y pégalo en la configuración de la integración.
+1. Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens).
+2. Create a new token (classic) with minimal permissions: `public_repo` (read-only).
+3. Copy the token and paste it into the integration configuration.
 
-## Servicio
+## Service
 
 ### `hacs_compatibility_auditor.check_now`
 
-Fuerza una re-comprobación inmediata de la compatibilidad de todos los paquetes HACS.
+Force an immediate re-check of all HACS packages' compatibility.
 
 ```yaml
 service: hacs_compatibility_auditor.check_now
 ```
 
-## Algoritmo de comprobación
+## Check Algorithm
 
-1. Obtiene la versión actual de HA desde la API interna.
-2. Consulta releases del repositorio `home-assistant/core` en GitHub para determinar la próxima versión.
-3. Enumera paquetes HACS desde múltiples fuentes (datos internos de HACS, `.storage`, directorio de repositorios).
-4. Para cada paquete:
-   - Consulta `hacs.json` / `manifest.json` para comprobar requisitos declarados de versión HA.
-   - Obtiene releases/tags más recientes del repositorio.
-   - Busca issues abiertos/recientes con labels y keywords de compatibilidad.
-   - Analiza notas de release para detectar breaking changes.
-   - Determina estado final: `compatible`, `warning` o `incompatible`.
-5. Expone resultados en sensores y eventos.
+1. Gets the current HA version from the internal API.
+2. Queries releases from the `home-assistant/core` repository on GitHub to determine the next version.
+3. Enumerates HACS packages from multiple sources (HACS internal data, `.storage`, repository directory).
+4. For each package:
+   - Checks `hacs.json` / `manifest.json` for declared HA version requirements.
+   - Fetches the latest releases/tags from the repository.
+   - Searches open/recent issues with compatibility labels and keywords.
+   - Analyzes release notes for breaking changes.
+   - Determines final status: `compatible`, `warning`, or `incompatible`.
+5. Exposes results in sensors and events.
 
-### Criterios de estado
+### Status criteria
 
-| Estado | Criterio |
+| Status | Criteria |
 |--------|----------|
-| `compatible` | Manifest compatible, sin issues relevantes |
-| `warning` | Issues de compatibilidad abiertos (prioridad media) o breaking changes en releases recientes |
-| `incompatible` | Manifest incompatible con versión actual o issue confirmado con label de alta severidad |
-| `unknown` | Error al obtener datos del paquete |
+| `compatible` | Manifest compatible, no relevant issues |
+| `warning` | Open compatibility issues (medium priority) or breaking changes in recent releases |
+| `incompatible` | Manifest incompatible with current version or confirmed issue with high-severity label |
+| `unknown` | Error fetching package data |
 
-## Eventos
+## Events
 
-La integración dispara un evento `hacs_compatibility_auditor_incompatibility_detected` cuando se detectan incompatibilidades:
+The integration fires a `hacs_compatibility_auditor_incompatibility_detected` event when incompatibilities are found:
 
 ```yaml
 - trigger:
@@ -120,19 +120,19 @@ La integración dispara un evento `hacs_compatibility_auditor_incompatibility_de
   action:
     - service: notify.mobile_app
       data:
-        title: "Incompatibilidad HACS detectada"
+        title: "HACS Incompatibility Detected"
         message: >
-          Se han detectado {{ trigger.event.data.incompatible_count }} paquetes
-          incompatibles con la próxima versión de Home Assistant.
+          {{ trigger.event.data.incompatible_count }} packages are
+          incompatible with the next version of Home Assistant.
 ```
 
-## Requisitos
+## Requirements
 
 - Home Assistant >= 2024.1.0
-- HACS instalado y configurado
-- Conexión a Internet (para consultar GitHub API)
-- Token de GitHub (opcional pero recomendado)
+- HACS installed and configured
+- Internet connection (to query the GitHub API)
+- GitHub Token (optional but recommended)
 
-## Licencia
+## License
 
 MIT
