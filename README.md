@@ -1,6 +1,8 @@
 # HACS Compatibility Auditor
 
 [![HACS Integration](https://img.shields.io/badge/HACS-Integration-blue.svg)](https://hacs.xyz)
+[![Build](https://img.shields.io/github/actions/workflow/status/RmG152/hacs-compatibility-auditor/ci.yaml?branch=main)](https://github.com/RmG152/hacs-compatibility-auditor/actions)
+[![Release](https://img.shields.io/github/v/release/RmG152/hacs-compatibility-auditor)](https://github.com/RmG152/hacs-compatibility-auditor/releases)
 
 Home Assistant integration that detects the current and next version of Home Assistant, lists all integrations and cards installed via HACS, and checks each package's compatibility by querying their GitHub issues and metadata.
 
