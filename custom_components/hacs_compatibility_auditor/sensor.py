@@ -126,6 +126,11 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
                 type_counts[pkg_type] = type_counts.get(pkg_type, 0) + 1
             attrs["by_type"] = type_counts
 
+        # Add rules status to the incompatible_count sensor
+        if key == "hacs_incompatible_count":
+            attrs["rules_enabled"] = data.get("rules_enabled", False)
+            attrs["rules_loaded"] = data.get("rules_loaded", False)
+
         return attrs
 
     @property

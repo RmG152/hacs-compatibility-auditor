@@ -8,11 +8,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import json
 import logging
-import re
 from typing import Any
 
 import aiohttp
-from packaging.version import InvalidVersion, Version, parse as parse_version
 
 from .const import (
     DEFAULT_ISSUE_KEYWORDS,
@@ -24,6 +22,12 @@ from .const import (
 )
 from .github_client import GitHubClient
 from .hacs_repository import HacsPackage
+from .rules_client import RulesClient
+from .version_utils import (
+    check_version_requirement,
+    parse_ha_version,
+    satisfies_constraint,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +45,7 @@ class CompatibilityResult:
     manifest_ha_requirement: str = ""
     last_checked: str = ""
     error: str = ""
+    data: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for sensor attributes."""
@@ -69,12 +74,14 @@ class CompatibilityChecker:
         issue_labels_priority: list[str] | None = None,
         issue_keywords: list[str] | None = None,
         ignore_list: list[str] | None = None,
+        rules_client: RulesClient | None = None,
     ) -> None:
         """Initialize the compatibility checker."""
         self._github = github_client
         self._issue_labels = issue_labels_priority or DEFAULT_ISSUE_LABELS_PRIORITY
         self._issue_keywords = issue_keywords or DEFAULT_ISSUE_KEYWORDS
         self._ignore_list = set(ignore_list or [])
+        self._rules = rules_client
 
     def update_config(
         self,
@@ -114,6 +121,24 @@ class CompatibilityChecker:
             result.status = "ignored"
             result.compatible_with_current = True
             result.compatible_with_next = True
+            return result
+
+        # Whitelist check (if rules available)
+        if self._rules and self._rules.is_whitelisted(package.full_name):
+            _LOGGER.debug("Package %s is whitelisted, marking compatible", package.full_name)
+            result.compatible_with_current = True
+            result.compatible_with_next = True
+            result.status = STATUS_COMPATIBLE
+            result.data["ruled_by"] = "whitelist"
+            return result
+
+        # Blacklist check (if rules available)
+        if self._rules and self._rules.is_blacklisted(package.full_name):
+            _LOGGER.debug("Package %s is blacklisted, marking incompatible", package.full_name)
+            result.compatible_with_current = False
+            result.compatible_with_next = False
+            result.status = STATUS_INCOMPATIBLE
+            result.data["ruled_by"] = "blacklist"
             return result
 
         try:
@@ -196,6 +221,22 @@ class CompatibilityChecker:
                 keywords=self._issue_keywords[:5],
                 since=since_date,
             )
+
+            # Filter false positives (if rules available)
+            false_positives: set[int] = set()
+            if self._rules:
+                false_positives = self._rules.get_false_positives(package.full_name)
+            if false_positives:
+                _LOGGER.debug("Filtering %d false positive issues for %s", len(false_positives), package.full_name)
+                issues = [i for i in issues if i.number not in false_positives]
+
+            # Recalculate priority with overrides (if rules available)
+            if self._rules:
+                label_overrides = self._rules.get_label_overrides(package.full_name)
+                keyword_overrides = self._rules.get_keyword_overrides(package.full_name)
+                if label_overrides or keyword_overrides:
+                    for issue in issues:
+                        issue.priority = self._apply_priority_overrides(issue, label_overrides, keyword_overrides)
 
             result.issues_relevant = [
                 {
@@ -308,91 +349,61 @@ class CompatibilityChecker:
     def _check_version_requirement(ha_version: str, requirement: str) -> bool:
         """Check if a HA version satisfies a requirement string.
 
-        The requirement can be in various formats:
-        - "2024.1.0" - minimum version
-        - ">=2024.1.0" - minimum version with operator
-        - ">=2024.1.0,<2025.0.0" - range
-        - "2024.1" - major.minor format
+        Delegates to version_utils.check_version_requirement.
         """
-        if not requirement or not ha_version:
-            return True  # No requirement = assumed compatible
-
-        try:
-            ha_ver = CompatibilityChecker._parse_ha_version(ha_version)
-        except (InvalidVersion, ValueError):
-            _LOGGER.warning("Cannot parse HA version: %s", ha_version)
-            return True
-
-        # Split by comma for multiple constraints
-        constraints = [c.strip() for c in requirement.split(",")]
-
-        for constraint in constraints:
-            if not CompatibilityChecker._satisfies_constraint(ha_ver, constraint):
-                return False
-
-        return True
+        return check_version_requirement(ha_version, requirement)
 
     @staticmethod
-    def _parse_ha_version(version_str: str) -> Version:
-        """Parse a Home Assistant version string.
-
-        HA versions can be like: 2024.1.0, 2024.1.0b1, 2024.1.0dev0
-        """
-        # Remove 'dev' and 'b' suffixes for comparison
-        cleaned = re.sub(r"(dev\d*|b\d+|rc\d+)$", "", version_str.strip()).rstrip(".")
-        if not cleaned:
-            raise ValueError(f"Empty version after cleaning: {version_str}")
-        return parse_version(cleaned)
+    def _parse_ha_version(version_str: str) -> Any:
+        """Parse a Home Assistant version string. Delegates to version_utils."""
+        return parse_ha_version(version_str)
 
     @staticmethod
-    def _satisfies_constraint(version: Version, constraint: str) -> bool:
-        """Check if a version satisfies a single constraint."""
-        constraint = constraint.strip()
+    def _satisfies_constraint(version, constraint: str) -> bool:
+        """Check if a version satisfies a single constraint. Delegates to version_utils."""
+        return satisfies_constraint(version, constraint)
 
-        # Extract operator and version
-        match = re.match(r"^([<>=!~]+)\s*(.+)$", constraint)
-        if match:
-            op = match.group(1)
-            req_str = match.group(2)
-        else:
-            # No operator means minimum version
-            op = ">="
-            req_str = constraint
+    def _apply_priority_overrides(
+        self,
+        issue,
+        label_overrides: dict[str, int],
+        keyword_overrides: dict[str, int],
+    ) -> int:
+        """Recalculate priority using label and keyword overrides."""
+        priority = 0
 
-        try:
-            req_ver = CompatibilityChecker._parse_ha_version(req_str)
-        except (InvalidVersion, ValueError):
-            _LOGGER.warning("Cannot parse requirement version: %s", req_str)
-            return True
+        high_priority_labels = {
+            "breaking-change": 20,
+            "breaking": 15,
+            "incompatible": 15,
+            "deprecation": 10,
+            "upgrade": 8,
+            "compatibility": 8,
+        }
 
-        result: bool
-        if op == ">=":
-            result = version >= req_ver
-        elif op == ">":
-            result = version > req_ver
-        elif op == "<=":
-            result = version <= req_ver
-        elif op == "<":
-            result = version < req_ver
-        elif op == "==":
-            result = version == req_ver
-        elif op == "!=":
-            result = version != req_ver
-        elif op == "~=":
-            # Compatible release
-            result = version >= req_ver and version.release[:2] == req_ver.release[:2]
-        else:
-            _LOGGER.warning("Unknown version operator: %s", op)
-            return True
+        for label in issue.labels:
+            label_name = label.lower() if isinstance(label, str) else label.name.lower()
+            base_weight = high_priority_labels.get(label_name, 0)
+            weight = label_overrides.get(label_name, base_weight)
+            if weight > 0:
+                priority += weight + 5
 
-        _LOGGER.debug(
-            "Version constraint check: %s %s %s -> %s",
-            version,
-            op,
-            req_ver,
-            result,
-        )
-        return result
+        keyword_boosts = {
+            "breaking change": 10,
+            "incompatible": 8,
+            "not compatible": 8,
+            "deprecated": 6,
+            "stopped working": 5,
+            "no longer works": 5,
+        }
+
+        issue_text = f"{issue.title} {issue.body}".lower()
+        for keyword, boost in keyword_boosts.items():
+            weight = keyword_overrides.get(keyword, boost)
+            if weight > 0 and keyword in issue_text:
+                priority += weight + 2
+
+        return priority
 
     @staticmethod
     def _contains_breaking_keywords(text: str) -> bool:
