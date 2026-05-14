@@ -1,7 +1,8 @@
 """Unit tests for compatibility checking logic."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock
 
 from custom_components.hacs_compatibility_auditor.compatibility import (
     CompatibilityChecker,
@@ -19,6 +20,7 @@ from custom_components.hacs_compatibility_auditor.github_client import (
     GitHubRelease,
 )
 from custom_components.hacs_compatibility_auditor.hacs_repository import HacsPackage
+from custom_components.hacs_compatibility_auditor.rules_client import RulesClient
 
 
 # --- Fixtures ---
@@ -87,6 +89,60 @@ def ignored_package():
         installed=True,
         owner="ignored",
         repo="repo",
+    )
+
+
+@pytest.fixture
+def mock_rules_client():
+    """Create a mock RulesClient with pre-loaded test data."""
+    client = MagicMock(spec=RulesClient)
+    client.is_whitelisted.return_value = False
+    client.is_blacklisted.return_value = False
+    client.get_false_positives.return_value = set()
+    client.get_label_overrides.return_value = {}
+    client.get_keyword_overrides.return_value = {}
+    return client
+
+
+@pytest.fixture
+def checker_with_rules(mock_github_client, mock_rules_client):
+    """Create a CompatibilityChecker with a mock rules client."""
+    return CompatibilityChecker(
+        github_client=mock_github_client,
+        issue_labels_priority=["breaking-change", "incompatible", "upgrade"],
+        issue_keywords=["breaking change", "not compatible"],
+        ignore_list=["ignored/repo"],
+        rules_client=mock_rules_client,
+    )
+
+
+@pytest.fixture
+def whitelisted_package():
+    """Create a sample package that is whitelisted."""
+    return HacsPackage(
+        id="111",
+        full_name="trusted/package",
+        name="Trusted Package",
+        category="integration",
+        installed_version="1.0.0",
+        installed=True,
+        owner="trusted",
+        repo="package",
+    )
+
+
+@pytest.fixture
+def blacklisted_package():
+    """Create a sample package that is blacklisted."""
+    return HacsPackage(
+        id="222",
+        full_name="bad/package",
+        name="Bad Package",
+        category="integration",
+        installed_version="1.0.0",
+        installed=True,
+        owner="bad",
+        repo="package",
     )
 
 
@@ -402,3 +458,201 @@ class TestShouldIgnore:
             repo="repo",
         )
         assert not checker.should_ignore(pkg)
+
+
+# --- Rules Integration Tests ---
+
+
+class TestRulesIntegration:
+    """Tests for RulesClient integration in CompatibilityChecker."""
+
+    @pytest.mark.asyncio
+    async def test_check_package_whitelisted(self, checker_with_rules, mock_github_client, whitelisted_package):
+        """Test that a whitelisted package is marked compatible without API calls."""
+        checker_with_rules._rules.is_whitelisted.return_value = True
+
+        result = await checker_with_rules.check_package(whitelisted_package, ha_current="2026.4.0")
+
+        assert result.status == STATUS_COMPATIBLE
+        assert result.compatible_with_current is True
+        assert result.compatible_with_next is True
+        assert result.data.get("ruled_by") == "whitelist"
+        mock_github_client.get_manifest.assert_not_called()
+        mock_github_client.get_releases.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_check_package_blacklisted(self, checker_with_rules, mock_github_client, blacklisted_package):
+        """Test that a blacklisted package is marked incompatible without API calls."""
+        checker_with_rules._rules.is_blacklisted.return_value = True
+
+        result = await checker_with_rules.check_package(blacklisted_package, ha_current="2026.4.0")
+
+        assert result.status == STATUS_INCOMPATIBLE
+        assert result.compatible_with_current is False
+        assert result.compatible_with_next is False
+        assert result.data.get("ruled_by") == "blacklist"
+        mock_github_client.get_manifest.assert_not_called()
+        mock_github_client.get_releases.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitelist_takes_priority_over_github(
+        self, checker_with_rules, mock_github_client, whitelisted_package
+    ):
+        """Test that whitelist takes priority and no API calls are made."""
+        checker_with_rules._rules.is_whitelisted.return_value = True
+
+        await checker_with_rules.check_package(whitelisted_package, ha_current="2026.4.0")
+
+        mock_github_client.get_manifest.assert_not_called()
+        mock_github_client.get_releases.assert_not_called()
+        mock_github_client.get_issues.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_blacklist_takes_priority_over_github(
+        self, checker_with_rules, mock_github_client, blacklisted_package
+    ):
+        """Test that blacklist takes priority and no API calls are made."""
+        checker_with_rules._rules.is_blacklisted.return_value = True
+
+        await checker_with_rules.check_package(blacklisted_package, ha_current="2026.4.0")
+
+        mock_github_client.get_manifest.assert_not_called()
+        mock_github_client.get_releases.assert_not_called()
+        mock_github_client.get_issues.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ignore_list_takes_priority_over_whitelist(self, checker_with_rules, mock_github_client):
+        """Test that ignore list takes priority over whitelist."""
+        pkg = HacsPackage(
+            id="333",
+            full_name="ignored/repo",
+            name="Ignored Repo",
+            category="theme",
+            installed=True,
+            owner="ignored",
+            repo="repo",
+        )
+        # Even if whitelisted, the ignore list should win
+        checker_with_rules._rules.is_whitelisted.return_value = True
+
+        result = await checker_with_rules.check_package(pkg, ha_current="2026.4.0")
+
+        assert result.status == "ignored"
+        mock_github_client.get_manifest.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_false_positive_issues_filtered(self, checker_with_rules, mock_github_client, sample_package):
+        """Test that false positive issues are excluded from results."""
+        checker_with_rules._rules.get_false_positives.return_value = {123}
+
+        mock_github_client.get_manifest.return_value = None
+        mock_github_client.get_releases.return_value = []
+        mock_github_client.get_issues.return_value = [
+            GitHubIssue(
+                title="False positive issue",
+                url="https://github.com/custom-cards/button-card/issues/123",
+                state="open",
+                labels=["bug"],
+                number=123,
+                priority=5,
+            ),
+            GitHubIssue(
+                title="Real issue",
+                url="https://github.com/custom-cards/button-card/issues/456",
+                state="open",
+                labels=["bug"],
+                number=456,
+                priority=8,
+            ),
+        ]
+
+        result = await checker_with_rules.check_package(sample_package, ha_current="2026.4.0")
+
+        # Only the real issue should appear
+        issue_numbers = [int(i["url"].split("/")[-1]) for i in result.issues_relevant]
+        assert 123 not in issue_numbers
+        assert 456 in issue_numbers
+
+    @pytest.mark.asyncio
+    async def test_label_overrides_applied(self, checker_with_rules, mock_github_client, sample_package):
+        """Test that label overrides modify weights correctly."""
+        checker_with_rules._rules.get_label_overrides.return_value = {"upgrade": 12}
+
+        mock_github_client.get_manifest.return_value = None
+        mock_github_client.get_releases.return_value = []
+        mock_github_client.get_issues.return_value = [
+            GitHubIssue(
+                title="Upgrade issue",
+                url="https://github.com/custom-cards/button-card/issues/1",
+                state="open",
+                labels=["upgrade"],
+                number=1,
+                priority=13,  # 5 base + 8 default for "upgrade"
+            ),
+        ]
+
+        result = await checker_with_rules.check_package(sample_package, ha_current="2026.4.0")
+
+        # With override weight 12 + base 5 = 17
+        issue = result.issues_relevant[0]
+        assert issue["priority"] == 17
+
+    @pytest.mark.asyncio
+    async def test_label_override_zero_ignores_label(self, checker_with_rules, mock_github_client, sample_package):
+        """Test that override weight 0 causes the label to be ignored."""
+        checker_with_rules._rules.get_label_overrides.return_value = {"bug": 0}
+
+        mock_github_client.get_manifest.return_value = None
+        mock_github_client.get_releases.return_value = []
+        mock_github_client.get_issues.return_value = [
+            GitHubIssue(
+                title="Bug issue",
+                url="https://github.com/custom-cards/button-card/issues/1",
+                state="open",
+                labels=["bug"],
+                number=1,
+                priority=8,  # 5 base + 3 (bug default is not in high_priority_labels)
+            ),
+        ]
+
+        result = await checker_with_rules.check_package(sample_package, ha_current="2026.4.0")
+
+        # With override weight 0, the bug label contributes nothing
+        issue = result.issues_relevant[0]
+        assert issue["priority"] == 0
+
+    @pytest.mark.asyncio
+    async def test_keyword_overrides_applied(self, checker_with_rules, mock_github_client, sample_package):
+        """Test that keyword overrides modify weights correctly."""
+        checker_with_rules._rules.get_keyword_overrides.return_value = {"breaking change": 15}
+
+        mock_github_client.get_manifest.return_value = None
+        mock_github_client.get_releases.return_value = []
+        mock_github_client.get_issues.return_value = [
+            GitHubIssue(
+                title="Breaking change in API",
+                url="https://github.com/custom-cards/button-card/issues/1",
+                state="open",
+                labels=[],
+                number=1,
+                priority=12,  # 2 base + 10 default keyword boost
+                body="This is a breaking change that affects compatibility",
+            ),
+        ]
+
+        result = await checker_with_rules.check_package(sample_package, ha_current="2026.4.0")
+
+        # With override weight 15 + base 2 = 17
+        issue = result.issues_relevant[0]
+        assert issue["priority"] == 17
+
+    @pytest.mark.asyncio
+    async def test_no_rules_client_fallback(self, checker, mock_github_client, sample_package):
+        """Test that without rules client, normal behavior is maintained."""
+        mock_github_client.get_manifest.return_value = None
+        mock_github_client.get_releases.return_value = []
+        mock_github_client.get_issues.return_value = []
+
+        result = await checker.check_package(sample_package, ha_current="2026.4.0")
+
+        assert result.status == STATUS_COMPATIBLE

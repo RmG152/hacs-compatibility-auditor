@@ -79,3 +79,40 @@ PLATFORMS = ["sensor"]
 
 # Signals
 SIGNAL_COMPATIBILITY_UPDATED = f"{DOMAIN}_compatibility_updated"
+
+# Rules repository
+CONF_RULES_REPO = "rules_repo"
+DEFAULT_RULES_REPO = "RmG152/hacs-compatibility-auditor-rules"
+CONF_RULES_ENABLED = "rules_enabled"
+DEFAULT_RULES_ENABLED = True
+
+RULES_INDEX_FILE = "index.json"
+RULES_FILES = [
+    "whitelist.yaml",
+    "blacklist.yaml",
+    "false_positives.yaml",
+    "label_overrides.yaml",
+    "keyword_overrides.yaml",
+]
+
+RULES_CACHE_TTL_SECONDS = 43200  # 12 hours (same interval as the coordinator)
+
+# Default weights (reference for label_overrides and keyword_overrides)
+DEFAULT_LABEL_WEIGHTS: dict[str, int] = {
+    "breaking-change": 20,
+    "breaking": 15,
+    "incompatible": 15,
+    "deprecation": 10,
+    "upgrade": 8,
+    "compatibility": 8,
+    "bug": 5,
+}
+
+DEFAULT_KEYWORD_WEIGHTS: dict[str, int] = {
+    "breaking change": 10,
+    "incompatible": 8,
+    "not compatible": 8,
+    "deprecated": 6,
+    "stopped working": 5,
+    "no longer works": 5,
+}

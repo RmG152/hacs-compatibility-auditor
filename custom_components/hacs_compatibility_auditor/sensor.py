@@ -126,6 +126,11 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
                 type_counts[pkg_type] = type_counts.get(pkg_type, 0) + 1
             attrs["by_type"] = type_counts
 
+        # Add rules status to the incompatible_count sensor
+        if key == "hacs_incompatible_count":
+            attrs["rules_enabled"] = data.get("rules_enabled", False)
+            attrs["rules_loaded"] = data.get("rules_loaded", False)
+
         return attrs
 
     @property
@@ -201,6 +206,7 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
             "issues_relevant": data.get("issues_relevant", []),
             "last_checked": data.get("last_checked", ""),
             "error": data.get("error", ""),
+            "reason": data.get("reason", ""),
             "repository_url": f"https://github.com/{self._package_full_name}",
         }
 
@@ -226,9 +232,6 @@ async def async_setup_entry(
 ) -> None:
     """Set up HACS Compatibility Auditor sensors from a config entry."""
     coordinator: HacsCompatibilityCoordinator = hass.data[DOMAIN][entry.entry_id]
-
-    # Wait for first data refresh
-    await coordinator.async_config_entry_first_refresh()
 
     entities: list[SensorEntity] = []
 

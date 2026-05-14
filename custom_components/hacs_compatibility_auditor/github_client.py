@@ -27,6 +27,7 @@ class GitHubIssue:
     updated_at: str = ""
     body: str = ""
     priority: int = 0  # Higher = more relevant
+    number: int = 0  # GitHub issue number
 
 
 @dataclass
@@ -394,6 +395,7 @@ class GitHubClient:
                                 updated_at=item.get("updated_at", ""),
                                 body=item.get("body", "")[:500] if item.get("body") else "",
                                 priority=self._calculate_issue_priority(issue_labels, label),
+                                number=item.get("number", 0),
                             )
                         )
                         count += 1
@@ -430,6 +432,7 @@ class GitHubClient:
                                 updated_at=item.get("updated_at", ""),
                                 body=item.get("body", "")[:500] if item.get("body") else "",
                                 priority=self._calculate_keyword_priority(issue_labels, keyword),
+                                number=item.get("number", 0),
                             )
                         )
                         count += 1

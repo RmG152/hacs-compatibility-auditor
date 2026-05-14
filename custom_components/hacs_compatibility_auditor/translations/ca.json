@@ -16,7 +16,8 @@
     "error": {
       "cannot_connect": "No s'ha pogut connectar a l'API de GitHub",
       "invalid_token": "Token de GitHub invàlid",
-      "hacs_not_found": "HACS no està instal·lat o no s'ha pogut accedir a les seves dades"
+      "hacs_not_found": "HACS no està instal·lat o no s'ha pogut accedir a les seves dades",
+      "invalid_repo_format": "El repositori ha de tenir el format 'owner/repo'"
     },
     "abort": {
       "already_configured": "La integració ja està configurada"
@@ -34,7 +35,9 @@
           "issue_labels_priority": "Etiquetes de GitHub amb prioritat alta (separades per coma)",
           "ignore_list": "Paquets a ignorar (noms de repo separats per coma)",
           "github_timeout": "Temps d'espera de consultes GitHub (segons)",
-          "github_retries": "Reintents de consultes GitHub"
+          "github_retries": "Reintents de consultes GitHub",
+          "rules_enabled": "Utilitzar regles de la comunitat",
+          "rules_repo": "Repositori de regles (owner/repo)"
         }
       }
     }

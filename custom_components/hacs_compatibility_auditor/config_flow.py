@@ -19,10 +19,14 @@ from .const import (
     CONF_GITHUB_TOKEN,
     CONF_IGNORE_LIST,
     CONF_ISSUE_LABELS_PRIORITY,
+    CONF_RULES_ENABLED,
+    CONF_RULES_REPO,
     DEFAULT_CACHE_HOURS,
     DEFAULT_CHECK_INTERVAL,
     DEFAULT_GITHUB_RETRIES,
     DEFAULT_GITHUB_TIMEOUT,
+    DEFAULT_RULES_ENABLED,
+    DEFAULT_RULES_REPO,
     DOMAIN,
 )
 from .github_client import GitHubClient
@@ -64,7 +68,7 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        super().__init__()
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
@@ -76,6 +80,16 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 valid, error = await _validate_github_token(self.hass, token)
                 if not valid:
                     errors["base"] = error or "cannot_connect"
+
+            if not errors:
+                # Validate rules_repo format if provided
+                rules_repo = user_input.get(CONF_RULES_REPO, DEFAULT_RULES_REPO)
+                if (
+                    "/" not in rules_repo
+                    or len(rules_repo.split("/")) != 2
+                    or not all(part.strip() for part in rules_repo.split("/"))
+                ):
+                    errors[CONF_RULES_REPO] = "invalid_repo_format"
 
             if not errors:
                 # Parse comma-separated lists
@@ -109,6 +123,11 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                             CONF_GITHUB_RETRIES,
                             self.config_entry.options.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
                         ),
+                        CONF_RULES_ENABLED: user_input.get(
+                            CONF_RULES_ENABLED,
+                            self.config_entry.options.get(CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED),
+                        ),
+                        CONF_RULES_REPO: rules_repo,
                     },
                 )
 
@@ -145,6 +164,14 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                     CONF_GITHUB_RETRIES,
                     default=current_options.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
                 ): vol.All(int, vol.Range(min=0, max=10)),
+                vol.Optional(
+                    CONF_RULES_ENABLED,
+                    default=current_options.get(CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED),
+                ): bool,
+                vol.Optional(
+                    CONF_RULES_REPO,
+                    default=current_options.get(CONF_RULES_REPO, DEFAULT_RULES_REPO),
+                ): str,
             }
         )
 

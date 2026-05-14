@@ -16,7 +16,8 @@
     "error": {
       "cannot_connect": "Could not connect to the GitHub API",
       "invalid_token": "Invalid GitHub token",
-      "hacs_not_found": "HACS is not installed or its data could not be accessed"
+      "hacs_not_found": "HACS is not installed or its data could not be accessed",
+      "invalid_repo_format": "Repository must be in 'owner/repo' format"
     },
     "abort": {
       "already_configured": "The integration is already configured"
@@ -34,7 +35,9 @@
           "issue_labels_priority": "High-priority GitHub labels (comma-separated)",
           "ignore_list": "Packages to ignore (repo names, comma-separated)",
           "github_timeout": "GitHub query timeout (seconds)",
-          "github_retries": "GitHub query retries"
+          "github_retries": "GitHub query retries",
+          "rules_enabled": "Use community rules",
+          "rules_repo": "Rules repository (owner/repo)"
         }
       }
     }
