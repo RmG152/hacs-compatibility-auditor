@@ -1,7 +1,6 @@
 """Unit tests for sensor platform."""
 
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from custom_components.hacs_compatibility_auditor.const import (
     STATUS_COMPATIBLE,

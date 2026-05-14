@@ -1,7 +1,7 @@
 """Unit tests for compatibility checking logic."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 from custom_components.hacs_compatibility_auditor.compatibility import (
     CompatibilityChecker,
@@ -10,7 +10,6 @@ from custom_components.hacs_compatibility_auditor.compatibility import (
 from custom_components.hacs_compatibility_auditor.const import (
     STATUS_COMPATIBLE,
     STATUS_INCOMPATIBLE,
-    STATUS_UNKNOWN,
     STATUS_WARNING,
 )
 from custom_components.hacs_compatibility_auditor.github_client import (

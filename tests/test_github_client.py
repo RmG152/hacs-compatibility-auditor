@@ -3,13 +3,10 @@
 import pytest
 import json
 import base64
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.hacs_compatibility_auditor.github_client import (
-    GitHubClient,
-    GitHubIssue,
-    GitHubManifest,
-    GitHubRelease,
+    GitHubClient
 )
 
 
