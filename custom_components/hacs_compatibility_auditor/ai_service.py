@@ -108,6 +108,8 @@ class AIManager:
         current_status: str,
         issues: list[dict[str, Any]],
         provider_name: str | None = None,
+        reason: str = "",
+        release_notes: list[str] | None = None,
     ) -> AIAnalysisResult:
         """Analyze package compatibility using AI."""
         provider = self._resolve_provider(provider_name)
@@ -123,6 +125,8 @@ class AIManager:
             manifest_ha=manifest_ha,
             current_status=current_status,
             issues=issues,
+            reason=reason,
+            release_notes=release_notes,
         )
 
         session = async_create_clientsession(self._hass)
@@ -207,6 +211,8 @@ class AIManager:
         manifest_ha: str,
         current_status: str,
         issues: list[dict[str, Any]],
+        reason: str = "",
+        release_notes: list[str] | None = None,
     ) -> tuple[str, str]:
         """Build prompts for package compatibility analysis."""
         user_parts = [
@@ -220,6 +226,12 @@ class AIManager:
         if manifest_ha:
             user_parts.append(f"Manifest HA requirement: {manifest_ha}")
         user_parts.append(f"Current algorithm status: {current_status}")
+        if reason:
+            user_parts.append(f"Algorithm reason: {reason}")
+        if release_notes:
+            user_parts.append(f"Matching release notes ({len(release_notes)}):")
+            for rl in release_notes:
+                user_parts.append(f"  - {rl[:400]}")
         user_parts.append("")
 
         if issues:

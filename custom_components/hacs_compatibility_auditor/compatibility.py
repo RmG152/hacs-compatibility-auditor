@@ -262,6 +262,7 @@ class CompatibilityChecker:
 
             # Check release notes for breaking change mentions
             release_breaking = False
+            matching_releases: list[str] = []
             if releases:
                 for release in releases[:3]:
                     if self._contains_breaking_keywords(release.body):
@@ -271,7 +272,13 @@ class CompatibilityChecker:
                             release.tag_name,
                             package.full_name,
                         )
-                        break
+                        snippet = (release.body or "")[:500]
+                        snippet = f"{release.tag_name}: {snippet}"
+                        matching_releases.append(snippet)
+                        if len(matching_releases) >= 2:
+                            break
+            if matching_releases:
+                result.data["matching_releases"] = matching_releases
 
             # Determine final status
             if not manifest_compatible_current or has_incompatible_issue:

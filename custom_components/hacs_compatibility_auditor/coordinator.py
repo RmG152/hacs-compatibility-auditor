@@ -515,6 +515,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 manifest_ha=result.manifest_ha_requirement,
                 current_status=result.status,
                 issues=issues,
+                reason=result.reason,
+                release_notes=result.data.get("matching_releases"),
             )
             result.ai_analysis = ai_result.to_dict()
             result_dict["ai_analysis"] = result.ai_analysis
@@ -741,6 +743,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             current_status=result.status,
             issues=issues,
             provider_name=provider_name,
+            reason=result.reason,
+            release_notes=result.data.get("matching_releases"),
         )
 
         return {
