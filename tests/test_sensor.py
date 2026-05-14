@@ -65,13 +65,15 @@ class TestGlobalSensorValues:
         )
 
         desc = GLOBAL_SENSOR_DESCRIPTIONS[3]  # hacs_incompatible_count
-        coordinator = self._make_coordinator({
-            "incompatible_count": 2,
-            "warning_count": 3,
-            "compatible_count": 10,
-            "unknown_count": 0,
-            "results": [],
-        })
+        coordinator = self._make_coordinator(
+            {
+                "incompatible_count": 2,
+                "warning_count": 3,
+                "compatible_count": 10,
+                "unknown_count": 0,
+                "results": [],
+            }
+        )
         sensor = HacsCompatibilityGlobalSensor(coordinator, desc)
 
         assert sensor.native_value == 2
@@ -135,9 +137,7 @@ class TestPackageSensor:
             "compatible_with_current": False,
             "compatible_with_next": False,
             "status": STATUS_INCOMPATIBLE,
-            "issues_relevant": [
-                {"title": "Broken after HA update", "url": "https://github.com/test/broken/issues/1"}
-            ],
+            "issues_relevant": [{"title": "Broken after HA update", "url": "https://github.com/test/broken/issues/1"}],
             "manifest_ha_requirement": ">=2025.1.0",
             "last_checked": "2024-06-01T00:00:00",
             "error": "",

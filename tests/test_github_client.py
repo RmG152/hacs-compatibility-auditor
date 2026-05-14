@@ -5,12 +5,11 @@ import json
 import base64
 from unittest.mock import AsyncMock, MagicMock
 
-from custom_components.hacs_compatibility_auditor.github_client import (
-    GitHubClient
-)
+from custom_components.hacs_compatibility_auditor.github_client import GitHubClient
 
 
 # --- Manifest Parsing Tests ---
+
 
 class TestManifestParsing:
     """Tests for parsing hacs.json and manifest.json from GitHub API responses."""
@@ -70,6 +69,7 @@ class TestManifestParsing:
 
 # --- Release Parsing Tests ---
 
+
 class TestReleaseParsing:
     """Tests for parsing GitHub releases."""
 
@@ -119,6 +119,7 @@ class TestReleaseParsing:
 
 # --- Issue Parsing Tests ---
 
+
 class TestIssueParsing:
     """Tests for parsing GitHub issues."""
 
@@ -156,7 +157,8 @@ class TestIssueParsing:
 
         client = GitHubClient(session=mock_session, token=None)
         issues = await client.get_issues(
-            "test", "repo",
+            "test",
+            "repo",
             labels=["breaking-change"],
         )
 
@@ -166,6 +168,7 @@ class TestIssueParsing:
 
 
 # --- Cache Tests ---
+
 
 class TestCaching:
     """Tests for caching behavior."""
@@ -192,6 +195,7 @@ class TestCaching:
     def test_cache_expiry(self):
         """Test that expired cache entries are not returned."""
         import time
+
         mock_session = MagicMock()
         client = GitHubClient(session=mock_session, token=None)
         client._cache_ttl = 0  # Immediately expires
@@ -217,6 +221,7 @@ class TestCaching:
 
 # --- Priority Calculation Tests ---
 
+
 class TestPriorityCalculation:
     """Tests for issue priority scoring."""
 
@@ -225,9 +230,7 @@ class TestPriorityCalculation:
         mock_session = MagicMock()
         client = GitHubClient(session=mock_session, token=None)
 
-        priority = client._calculate_issue_priority(
-            ["breaking-change", "bug"], "breaking-change"
-        )
+        priority = client._calculate_issue_priority(["breaking-change", "bug"], "breaking-change")
         assert priority >= 20
 
     def test_keyword_priority_breaking(self):
@@ -235,9 +238,7 @@ class TestPriorityCalculation:
         mock_session = MagicMock()
         client = GitHubClient(session=mock_session, token=None)
 
-        priority = client._calculate_keyword_priority(
-            ["bug"], "breaking change"
-        )
+        priority = client._calculate_keyword_priority(["bug"], "breaking change")
         assert priority >= 10
 
     def test_low_priority_issue(self):
@@ -245,7 +246,5 @@ class TestPriorityCalculation:
         mock_session = MagicMock()
         client = GitHubClient(session=mock_session, token=None)
 
-        priority = client._calculate_keyword_priority(
-            [], "feature request"
-        )
+        priority = client._calculate_keyword_priority([], "feature request")
         assert priority < 5

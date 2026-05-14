@@ -30,9 +30,7 @@ from .github_client import GitHubClient
 _LOGGER = logging.getLogger(__name__)
 
 
-async def _validate_github_token(
-    hass: HomeAssistant, token: str | None
-) -> tuple[bool, str | None]:
+async def _validate_github_token(hass: HomeAssistant, token: str | None) -> tuple[bool, str | None]:
     """Validate the GitHub token by making a test request."""
     if not token:
         return True, None  # Token is optional
@@ -68,9 +66,7 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
         """Initialize options flow."""
         self.config_entry = config_entry
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
         errors: dict[str, str] = {}
 
@@ -85,48 +81,33 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 # Parse comma-separated lists
                 issue_labels = user_input.get(CONF_ISSUE_LABELS_PRIORITY, "")
                 if isinstance(issue_labels, str):
-                    issue_labels = [
-                        label.strip()
-                        for label in issue_labels.split(",")
-                        if label.strip()
-                    ]
+                    issue_labels = [label.strip() for label in issue_labels.split(",") if label.strip()]
 
                 ignore_list = user_input.get(CONF_IGNORE_LIST, "")
                 if isinstance(ignore_list, str):
-                    ignore_list = [
-                        p.strip() for p in ignore_list.split(",") if p.strip()
-                    ]
+                    ignore_list = [p.strip() for p in ignore_list.split(",") if p.strip()]
 
                 return self.async_create_entry(
                     title="",
                     data={
-                        CONF_GITHUB_TOKEN: token
-                        or self.config_entry.data.get(CONF_GITHUB_TOKEN, ""),
+                        CONF_GITHUB_TOKEN: token or self.config_entry.data.get(CONF_GITHUB_TOKEN, ""),
                         CONF_CHECK_INTERVAL: user_input.get(
                             CONF_CHECK_INTERVAL,
-                            self.config_entry.options.get(
-                                CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
-                            ),
+                            self.config_entry.options.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL),
                         ),
                         CONF_CACHE_HOURS: user_input.get(
                             CONF_CACHE_HOURS,
-                            self.config_entry.options.get(
-                                CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS
-                            ),
+                            self.config_entry.options.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS),
                         ),
                         CONF_ISSUE_LABELS_PRIORITY: issue_labels,
                         CONF_IGNORE_LIST: ignore_list,
                         CONF_GITHUB_TIMEOUT: user_input.get(
                             CONF_GITHUB_TIMEOUT,
-                            self.config_entry.options.get(
-                                CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT
-                            ),
+                            self.config_entry.options.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT),
                         ),
                         CONF_GITHUB_RETRIES: user_input.get(
                             CONF_GITHUB_RETRIES,
-                            self.config_entry.options.get(
-                                CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES
-                            ),
+                            self.config_entry.options.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
                         ),
                     },
                 )
@@ -142,9 +123,7 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 ): str,
                 vol.Optional(
                     CONF_CHECK_INTERVAL,
-                    default=current_options.get(
-                        CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
-                    ),
+                    default=current_options.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL),
                 ): vol.All(int, vol.Range(min=1, max=168)),
                 vol.Optional(
                     CONF_CACHE_HOURS,
@@ -152,9 +131,7 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 ): vol.All(int, vol.Range(min=1, max=72)),
                 vol.Optional(
                     CONF_ISSUE_LABELS_PRIORITY,
-                    default=",".join(
-                        current_options.get(CONF_ISSUE_LABELS_PRIORITY, [])
-                    ),
+                    default=",".join(current_options.get(CONF_ISSUE_LABELS_PRIORITY, [])),
                 ): str,
                 vol.Optional(
                     CONF_IGNORE_LIST,
@@ -162,15 +139,11 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                 ): str,
                 vol.Optional(
                     CONF_GITHUB_TIMEOUT,
-                    default=current_options.get(
-                        CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT
-                    ),
+                    default=current_options.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT),
                 ): vol.All(int, vol.Range(min=5, max=120)),
                 vol.Optional(
                     CONF_GITHUB_RETRIES,
-                    default=current_options.get(
-                        CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES
-                    ),
+                    default=current_options.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
                 ): vol.All(int, vol.Range(min=0, max=10)),
             }
         )
@@ -188,9 +161,7 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
     VERSION = 1
     MINOR_VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -214,36 +185,26 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
                             CONF_GITHUB_TOKEN: token or "",
                         },
                         options={
-                            CONF_CHECK_INTERVAL: user_input.get(
-                                CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
-                            ),
-                            CONF_CACHE_HOURS: user_input.get(
-                                CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS
-                            ),
-                            CONF_GITHUB_TIMEOUT: user_input.get(
-                                CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT
-                            ),
-                            CONF_GITHUB_RETRIES: user_input.get(
-                                CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES
-                            ),
+                            CONF_CHECK_INTERVAL: user_input.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL),
+                            CONF_CACHE_HOURS: user_input.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS),
+                            CONF_GITHUB_TIMEOUT: user_input.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT),
+                            CONF_GITHUB_RETRIES: user_input.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
                         },
                     )
 
         data_schema = vol.Schema(
             {
                 vol.Optional(CONF_GITHUB_TOKEN): str,
-                vol.Optional(
-                    CONF_CHECK_INTERVAL, default=DEFAULT_CHECK_INTERVAL
-                ): vol.All(int, vol.Range(min=1, max=168)),
-                vol.Optional(CONF_CACHE_HOURS, default=DEFAULT_CACHE_HOURS): vol.All(
-                    int, vol.Range(min=1, max=72)
+                vol.Optional(CONF_CHECK_INTERVAL, default=DEFAULT_CHECK_INTERVAL): vol.All(
+                    int, vol.Range(min=1, max=168)
                 ),
-                vol.Optional(
-                    CONF_GITHUB_TIMEOUT, default=DEFAULT_GITHUB_TIMEOUT
-                ): vol.All(int, vol.Range(min=5, max=120)),
-                vol.Optional(
-                    CONF_GITHUB_RETRIES, default=DEFAULT_GITHUB_RETRIES
-                ): vol.All(int, vol.Range(min=0, max=10)),
+                vol.Optional(CONF_CACHE_HOURS, default=DEFAULT_CACHE_HOURS): vol.All(int, vol.Range(min=1, max=72)),
+                vol.Optional(CONF_GITHUB_TIMEOUT, default=DEFAULT_GITHUB_TIMEOUT): vol.All(
+                    int, vol.Range(min=5, max=120)
+                ),
+                vol.Optional(CONF_GITHUB_RETRIES, default=DEFAULT_GITHUB_RETRIES): vol.All(
+                    int, vol.Range(min=0, max=10)
+                ),
             }
         )
 
@@ -260,6 +221,3 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
     ) -> HacsCompatibilityAuditorOptionsFlow:
         """Get the options flow for this handler."""
         return HacsCompatibilityAuditorOptionsFlow(config_entry)
-
-
-

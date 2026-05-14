@@ -87,9 +87,7 @@ class CompatibilityChecker:
 
     def should_ignore(self, package: HacsPackage) -> bool:
         """Check if a package should be ignored."""
-        return (
-            package.full_name in self._ignore_list or package.name in self._ignore_list
-        )
+        return package.full_name in self._ignore_list or package.name in self._ignore_list
 
     async def check_package(
         self,
@@ -137,9 +135,7 @@ class CompatibilityChecker:
 
             # Step 2: Get latest release info
             _LOGGER.debug("Step 2: Fetching releases for %s", package.full_name)
-            releases = await self._github.get_releases(
-                package.owner, package.repo, per_page=5
-            )
+            releases = await self._github.get_releases(package.owner, package.repo, per_page=5)
             if releases:
                 latest_stable = None
                 for release in releases:
@@ -147,9 +143,7 @@ class CompatibilityChecker:
                         latest_stable = release
                         break
                 if latest_stable:
-                    result.latest_version = (
-                        result.latest_version or latest_stable.tag_name
-                    )
+                    result.latest_version = result.latest_version or latest_stable.tag_name
                 _LOGGER.debug(
                     "Releases for %s: %d total, latest_stable=%s",
                     package.full_name,
@@ -160,9 +154,7 @@ class CompatibilityChecker:
                 _LOGGER.debug("No releases found for %s", package.full_name)
 
             # Step 3: Check manifest compatibility
-            _LOGGER.debug(
-                "Step 3: Checking manifest compatibility for %s", package.full_name
-            )
+            _LOGGER.debug("Step 3: Checking manifest compatibility for %s", package.full_name)
             manifest_compatible_current = True
             manifest_compatible_next = True
 
@@ -178,9 +170,7 @@ class CompatibilityChecker:
                     manifest_compatible_current,
                 )
                 if ha_next:
-                    manifest_compatible_next = self._check_version_requirement(
-                        ha_next, result.manifest_ha_requirement
-                    )
+                    manifest_compatible_next = self._check_version_requirement(ha_next, result.manifest_ha_requirement)
                     _LOGGER.debug(
                         "Version check for %s: ha_next=%s vs requirement=%s -> compatible=%s",
                         package.full_name,
@@ -197,9 +187,7 @@ class CompatibilityChecker:
             # Step 4: Check for relevant issues
             _LOGGER.debug("Step 4: Checking issues for %s", package.full_name)
 
-            since_date = (datetime.now(UTC) - timedelta(days=90)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            since_date = (datetime.now(UTC) - timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
             issues = await self._github.get_issues(
                 package.owner,
@@ -220,9 +208,7 @@ class CompatibilityChecker:
                 }
                 for issue in issues
             ]
-            _LOGGER.debug(
-                "Found %d relevant issues for %s", len(issues), package.full_name
-            )
+            _LOGGER.debug("Found %d relevant issues for %s", len(issues), package.full_name)
 
             # Step 5: Determine overall compatibility status
             _LOGGER.debug("Step 5: Determining status for %s", package.full_name)
@@ -246,21 +232,11 @@ class CompatibilityChecker:
             if not manifest_compatible_current or has_incompatible_issue:
                 result.status = STATUS_INCOMPATIBLE
                 result.compatible_with_current = False
-                result.compatible_with_next = (
-                    manifest_compatible_next and not has_incompatible_issue
-                )
-            elif (
-                (ha_next and not manifest_compatible_next)
-                or has_warning_issue
-                or release_breaking
-            ):
+                result.compatible_with_next = manifest_compatible_next and not has_incompatible_issue
+            elif (ha_next and not manifest_compatible_next) or has_warning_issue or release_breaking:
                 result.status = STATUS_WARNING
-                result.compatible_with_current = (
-                    manifest_compatible_current and not has_warning_issue
-                )
-                result.compatible_with_next = (
-                    manifest_compatible_next and not release_breaking
-                )
+                result.compatible_with_current = manifest_compatible_current and not has_warning_issue
+                result.compatible_with_next = manifest_compatible_next and not release_breaking
             else:
                 result.status = STATUS_COMPATIBLE
                 result.compatible_with_current = True

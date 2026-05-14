@@ -111,18 +111,10 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
             attrs["compatible_count"] = data.get("compatible_count", 0)
             attrs["unknown_count"] = data.get("unknown_count", 0)
             # List incompatible packages
-            incompatible = [
-                r["name"]
-                for r in data.get("results", [])
-                if r.get("status") == STATUS_INCOMPATIBLE
-            ]
+            incompatible = [r["name"] for r in data.get("results", []) if r.get("status") == STATUS_INCOMPATIBLE]
             attrs["incompatible_packages"] = incompatible
             # List warning packages
-            warnings = [
-                r["name"]
-                for r in data.get("results", [])
-                if r.get("status") == STATUS_WARNING
-            ]
+            warnings = [r["name"] for r in data.get("results", []) if r.get("status") == STATUS_WARNING]
             attrs["warning_packages"] = warnings
         elif key == "ha_version_next":
             attrs["is_release_candidate"] = data.get("ha_next_is_rc", False)
@@ -242,25 +234,20 @@ async def async_setup_entry(
 
     # Add global sensors
     entities.extend(
-        HacsCompatibilityGlobalSensor(coordinator, description)
-        for description in GLOBAL_SENSOR_DESCRIPTIONS
+        HacsCompatibilityGlobalSensor(coordinator, description) for description in GLOBAL_SENSOR_DESCRIPTIONS
     )
 
     # Add per-package sensors
     data = coordinator.data
     if data:
-        entities.extend(
-            HacsPackageSensor(coordinator, result) for result in data.get("results", [])
-        )
+        entities.extend(HacsPackageSensor(coordinator, result) for result in data.get("results", []))
 
     async_add_entities(entities, True)
 
     # Store callback to add/remove package sensors on update
     entry.async_on_unload(
         coordinator.async_add_listener(
-            lambda: _async_update_package_sensors(
-                hass, entry, coordinator, async_add_entities
-            )
+            lambda: _async_update_package_sensors(hass, entry, coordinator, async_add_entities)
         )
     )
 

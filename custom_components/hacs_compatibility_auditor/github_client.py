@@ -123,9 +123,7 @@ class GitHubClient:
     def _set_cache(self, key: str, data: Any) -> None:
         """Store data in cache."""
         self._cache[key] = (time.time(), data)
-        _LOGGER.debug(
-            "Cached response for key: %s (cache size: %d)", key, len(self._cache)
-        )
+        _LOGGER.debug("Cached response for key: %s (cache size: %d)", key, len(self._cache))
 
     def clear_cache(self) -> None:
         """Clear the entire cache."""
@@ -155,9 +153,7 @@ class GitHubClient:
             # Check rate limits
             if self._rate_limit_remaining <= 5 and self._rate_limit_reset > time.time():
                 wait_time = self._rate_limit_reset - time.time() + 1
-                _LOGGER.warning(
-                    "GitHub rate limit approaching. Waiting %.0f seconds", wait_time
-                )
+                _LOGGER.warning("GitHub rate limit approaching. Waiting %.0f seconds", wait_time)
                 await asyncio.sleep(min(wait_time, 60))
 
             try:
@@ -247,14 +243,10 @@ class GitHubClient:
         _LOGGER.error("All retries exhausted for %s. Last error: %s", url, last_error)
         return None
 
-    async def get_releases(
-        self, owner: str, repo: str, per_page: int = 10
-    ) -> list[GitHubRelease]:
+    async def get_releases(self, owner: str, repo: str, per_page: int = 10) -> list[GitHubRelease]:
         """Get releases for a repository."""
         url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/releases?per_page={per_page}"
-        _LOGGER.debug(
-            "Fetching releases for %s/%s (per_page=%d)", owner, repo, per_page
-        )
+        _LOGGER.debug("Fetching releases for %s/%s (per_page=%d)", owner, repo, per_page)
         data = await self._request(url)
 
         if not data or not isinstance(data, list):
@@ -311,9 +303,7 @@ class GitHubClient:
                     filename=manifest_data.get("filename", ""),
                 )
             except (json.JSONDecodeError, KeyError, ValueError) as exc:
-                _LOGGER.debug(
-                    "Failed to parse hacs.json for %s/%s: %s", owner, repo, exc
-                )
+                _LOGGER.debug("Failed to parse hacs.json for %s/%s: %s", owner, repo, exc)
             else:
                 _LOGGER.debug(
                     "Found hacs.json for %s/%s (name=%s, version=%s, ha_req=%s)",
@@ -341,9 +331,7 @@ class GitHubClient:
                     requirements=manifest_data.get("requirements", []),
                 )
             except (json.JSONDecodeError, KeyError, ValueError) as exc:
-                _LOGGER.debug(
-                    "Failed to parse manifest.json for %s/%s: %s", owner, repo, exc
-                )
+                _LOGGER.debug("Failed to parse manifest.json for %s/%s: %s", owner, repo, exc)
             else:
                 _LOGGER.debug(
                     "Found manifest.json for %s/%s (name=%s, version=%s, ha_req=%s)",
@@ -383,16 +371,11 @@ class GitHubClient:
         # First, search by labels if provided
         if labels:
             for label in labels[:5]:  # Limit to avoid too many API calls
-                url = (
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues"
-                    f"?state={state}&labels={label}&per_page={per_page}"
-                )
+                url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues?state={state}&labels={label}&per_page={per_page}"
                 if since:
                     url += f"&since={since}"
 
-                _LOGGER.debug(
-                    "Searching issues by label '%s' for %s/%s", label, owner, repo
-                )
+                _LOGGER.debug("Searching issues by label '%s' for %s/%s", label, owner, repo)
                 data = await self._request(url)
                 if data and isinstance(data, list):
                     count = 0
@@ -400,9 +383,7 @@ class GitHubClient:
                         # Skip PRs
                         if item.get("pull_request"):
                             continue
-                        issue_labels = [
-                            lbl.get("name", "") for lbl in item.get("labels", [])
-                        ]
+                        issue_labels = [lbl.get("name", "") for lbl in item.get("labels", [])]
                         all_issues.append(
                             GitHubIssue(
                                 title=item.get("title", ""),
@@ -411,12 +392,8 @@ class GitHubClient:
                                 labels=issue_labels,
                                 created_at=item.get("created_at", ""),
                                 updated_at=item.get("updated_at", ""),
-                                body=item.get("body", "")[:500]
-                                if item.get("body")
-                                else "",
-                                priority=self._calculate_issue_priority(
-                                    issue_labels, label
-                                ),
+                                body=item.get("body", "")[:500] if item.get("body") else "",
+                                priority=self._calculate_issue_priority(issue_labels, label),
                             )
                         )
                         count += 1
@@ -432,20 +409,13 @@ class GitHubClient:
         if keywords:
             for keyword in keywords[:3]:  # Limit keyword searches
                 search_query = f"repo:{owner}/{repo} is:issue is:{state} {keyword}"
-                url = (
-                    f"{GITHUB_API_BASE}/search/issues"
-                    f"?q={search_query}&per_page={per_page}"
-                )
-                _LOGGER.debug(
-                    "Searching issues by keyword '%s' for %s/%s", keyword, owner, repo
-                )
+                url = f"{GITHUB_API_BASE}/search/issues?q={search_query}&per_page={per_page}"
+                _LOGGER.debug("Searching issues by keyword '%s' for %s/%s", keyword, owner, repo)
                 data = await self._request(url)
                 if data and isinstance(data, dict) and "items" in data:
                     count = 0
                     for item in data["items"]:
-                        issue_labels = [
-                            lbl.get("name", "") for lbl in item.get("labels", [])
-                        ]
+                        issue_labels = [lbl.get("name", "") for lbl in item.get("labels", [])]
                         # Check if already found
                         existing_urls = {i.url for i in all_issues}
                         if item.get("html_url", "") in existing_urls:
@@ -458,12 +428,8 @@ class GitHubClient:
                                 labels=issue_labels,
                                 created_at=item.get("created_at", ""),
                                 updated_at=item.get("updated_at", ""),
-                                body=item.get("body", "")[:500]
-                                if item.get("body")
-                                else "",
-                                priority=self._calculate_keyword_priority(
-                                    issue_labels, keyword
-                                ),
+                                body=item.get("body", "")[:500] if item.get("body") else "",
+                                priority=self._calculate_keyword_priority(issue_labels, keyword),
                             )
                         )
                         count += 1
@@ -500,9 +466,7 @@ class GitHubClient:
         _LOGGER.debug("Found %d HA core releases", len(releases))
         return releases
 
-    def _calculate_issue_priority(
-        self, issue_labels: list[str], matched_label: str
-    ) -> int:
+    def _calculate_issue_priority(self, issue_labels: list[str], matched_label: str) -> int:
         """Calculate priority score for a label-matched issue."""
         score = 5  # Base score for label match
         high_priority_labels = {
@@ -519,9 +483,7 @@ class GitHubClient:
                 score += high_priority_labels[label_lower]
         return score
 
-    def _calculate_keyword_priority(
-        self, issue_labels: list[str], matched_keyword: str
-    ) -> int:
+    def _calculate_keyword_priority(self, issue_labels: list[str], matched_keyword: str) -> int:
         """Calculate priority score for a keyword-matched issue."""
         score = 2  # Lower base score for keyword match
         keyword_boost = {

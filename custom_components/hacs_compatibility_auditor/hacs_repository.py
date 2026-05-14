@@ -74,9 +74,7 @@ class HacsRepositoryReader:
         try:
             packages = await self._read_from_hacs_internal()
             if packages:
-                _LOGGER.info(
-                    "Found %d HACS packages via internal data access", len(packages)
-                )
+                _LOGGER.info("Found %d HACS packages via internal data access", len(packages))
                 return packages
             _LOGGER.debug("HACS internal data access returned no packages")
         except (*_ERRORS,) as exc:
@@ -98,9 +96,7 @@ class HacsRepositoryReader:
         try:
             packages = await self._read_from_repositories_dir()
             if packages:
-                _LOGGER.info(
-                    "Found %d HACS packages via repositories directory", len(packages)
-                )
+                _LOGGER.info("Found %d HACS packages via repositories directory", len(packages))
                 return packages
             _LOGGER.debug("HACS repositories directory returned no packages")
         except (*_ERRORS,) as exc:
@@ -144,14 +140,10 @@ class HacsRepositoryReader:
         # Modern HACS: use list_downloaded (returns HacsRepository objects)
         repositories_obj = getattr(hacs_data, "repositories", None)
         if repositories_obj is not None:
-            _LOGGER.debug(
-                "Found HACS repositories object: %s", type(repositories_obj).__name__
-            )
+            _LOGGER.debug("Found HACS repositories object: %s", type(repositories_obj).__name__)
             list_downloaded = getattr(repositories_obj, "list_downloaded", None)
             if list_downloaded is not None:
-                downloaded_count = (
-                    len(list_downloaded) if hasattr(list_downloaded, "__len__") else "?"
-                )
+                downloaded_count = len(list_downloaded) if hasattr(list_downloaded, "__len__") else "?"
                 _LOGGER.debug("Using list_downloaded (%s items)", downloaded_count)
                 for repo in list_downloaded:
                     package = self._parse_hacs_repository(repo)
@@ -166,9 +158,7 @@ class HacsRepositoryReader:
 
             # Fallback: iterate repositories directly
             if isinstance(repositories_obj, dict):
-                _LOGGER.debug(
-                    "Iterating repositories dict (%d entries)", len(repositories_obj)
-                )
+                _LOGGER.debug("Iterating repositories dict (%d entries)", len(repositories_obj))
                 for repo in repositories_obj.values():
                     package = self._parse_hacs_repository(repo)
                     if package and package.installed:
@@ -219,16 +209,10 @@ class HacsRepositoryReader:
             category = self._map_category(getattr(source, "category", "") or "")
 
             installed_version = (
-                getattr(source, "version_installed", None)
-                or getattr(source, "installed_version", "")
-                or ""
+                getattr(source, "version_installed", None) or getattr(source, "installed_version", "") or ""
             )
 
-            available_version = (
-                getattr(source, "last_version", None)
-                or getattr(source, "available_version", "")
-                or ""
-            )
+            available_version = getattr(source, "last_version", None) or getattr(source, "available_version", "") or ""
 
             installed = getattr(source, "installed", False) or bool(installed_version)
 
@@ -238,9 +222,7 @@ class HacsRepositoryReader:
             if manifest is not None:
                 homeassistant_version = getattr(manifest, "homeassistant", "") or ""
             if not homeassistant_version:
-                homeassistant_version = (
-                    getattr(source, "homeassistant_version", "") or ""
-                )
+                homeassistant_version = getattr(source, "homeassistant_version", "") or ""
 
             _LOGGER.debug(
                 "Parsed HACS repo: %s (category=%s, installed=%s, version=%s, ha_req=%s)",
@@ -290,20 +272,14 @@ class HacsRepositoryReader:
                 continue
             _LOGGER.debug("Reading HACS storage file: %s", storage_path.name)
             try:
-                data = await self._hass.async_add_executor_job(
-                    self._read_storage_file, str(storage_path)
-                )
+                data = await self._hass.async_add_executor_job(self._read_storage_file, str(storage_path))
                 packages = self._parse_storage_data(data, storage_path.name)
                 if packages:
-                    _LOGGER.debug(
-                        "Parsed %d packages from %s", len(packages), storage_path.name
-                    )
+                    _LOGGER.debug("Parsed %d packages from %s", len(packages), storage_path.name)
                     return packages
                 _LOGGER.debug("No installed packages found in %s", storage_path.name)
             except (*_ERRORS,) as exc:
-                _LOGGER.debug(
-                    "Error reading HACS storage %s: %s", storage_path.name, exc
-                )
+                _LOGGER.debug("Error reading HACS storage %s: %s", storage_path.name, exc)
 
         # Final fallback: ancient path inside HACS component dir
         ancient_path = Path(config_dir) / "custom_components" / "hacs" / ".storage"
@@ -313,9 +289,7 @@ class HacsRepositoryReader:
                 for f in ancient_path.iterdir():
                     if f.suffix == ".json":
                         _LOGGER.debug("Reading legacy storage file: %s", f.name)
-                        data = await self._hass.async_add_executor_job(
-                            self._read_storage_file, str(f)
-                        )
+                        data = await self._hass.async_add_executor_job(self._read_storage_file, str(f))
                         packages = self._parse_storage_data(data, f.name)
                         if packages:
                             _LOGGER.debug(
@@ -336,9 +310,7 @@ class HacsRepositoryReader:
         with Path(path).open(encoding="utf-8") as f:
             return json.loads(f.read())
 
-    def _parse_storage_data(
-        self, data: dict[str, Any], filename: str = ""
-    ) -> list[HacsPackage]:
+    def _parse_storage_data(self, data: dict[str, Any], filename: str = "") -> list[HacsPackage]:
         """Parse HACS storage data into packages."""
         packages = []
 
@@ -358,9 +330,7 @@ class HacsRepositoryReader:
             if isinstance(by_category, dict):
                 for category_repos in by_category.values():
                     if isinstance(category_repos, list):
-                        repo_dicts.extend(
-                            r for r in category_repos if isinstance(r, dict)
-                        )
+                        repo_dicts.extend(r for r in category_repos if isinstance(r, dict))
         else:
             # Legacy formats: list of repos, or dict of repo objects
             repositories = inner.get("repositories", inner.get("data", []))
@@ -382,16 +352,8 @@ class HacsRepositoryReader:
             repo_name = parts[1] if len(parts) > 1 else ""
 
             # Storage uses "version_installed" (not "installed_version")
-            installed_version = (
-                repo_data.get("version_installed")
-                or repo_data.get("installed_version", "")
-                or ""
-            )
-            available_version = (
-                repo_data.get("last_version")
-                or repo_data.get("available_version", "")
-                or ""
-            )
+            installed_version = repo_data.get("version_installed") or repo_data.get("installed_version", "") or ""
+            available_version = repo_data.get("last_version") or repo_data.get("available_version", "") or ""
 
             packages.append(
                 HacsPackage(
@@ -408,9 +370,7 @@ class HacsRepositoryReader:
                     description=repo_data.get("description", "") or "",
                     homeassistant_version=(
                         repo_data.get("homeassistant_version")
-                        or repo_data.get("repository_manifest", {}).get(
-                            "homeassistant", ""
-                        )
+                        or repo_data.get("repository_manifest", {}).get("homeassistant", "")
                         or ""
                     ),
                 )
@@ -458,10 +418,7 @@ class HacsRepositoryReader:
                                     full_name=full_name,
                                     name=repo_data.get("name", "") or repo_name,
                                     category=category,
-                                    installed_version=repo_data.get(
-                                        "installed_version", ""
-                                    )
-                                    or "",
+                                    installed_version=repo_data.get("installed_version", "") or "",
                                     available_version=repo_data.get("last_version", "")
                                     or repo_data.get("available_version", "")
                                     or "",
@@ -470,16 +427,11 @@ class HacsRepositoryReader:
                                     owner=owner,
                                     repo=repo_name,
                                     description=repo_data.get("description", "") or "",
-                                    homeassistant_version=repo_data.get(
-                                        "homeassistant_version", ""
-                                    )
-                                    or "",
+                                    homeassistant_version=repo_data.get("homeassistant_version", "") or "",
                                 )
                             )
                         except (*_ERRORS,) as exc:
-                            _LOGGER.debug(
-                                "Error reading repo file %s: %s", repo_file, exc
-                            )
+                            _LOGGER.debug("Error reading repo file %s: %s", repo_file, exc)
             except (*_ERRORS,) as exc:
                 _LOGGER.debug("Error scanning repositories dir: %s", exc)
             return found
@@ -502,6 +454,4 @@ class HacsRepositoryReader:
             "card": PACKAGE_TYPE_PLUGIN,
             "lovelace": PACKAGE_TYPE_PLUGIN,
         }
-        return mapping.get(
-            raw.lower(), raw.lower() if raw else PACKAGE_TYPE_INTEGRATION
-        )
+        return mapping.get(raw.lower(), raw.lower() if raw else PACKAGE_TYPE_INTEGRATION)

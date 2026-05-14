@@ -77,9 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "incompatible_count": data.get("incompatible_count", 0),
                 "warning_count": data.get("warning_count", 0),
                 "incompatible_packages": [
-                    r.get("name", "")
-                    for r in data.get("results", [])
-                    if r.get("status") == "incompatible"
+                    r.get("name", "") for r in data.get("results", []) if r.get("status") == "incompatible"
                 ],
             },
         )

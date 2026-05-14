@@ -97,19 +97,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         entry_options = config_entry.options
 
         self._github_token = entry_data.get(CONF_GITHUB_TOKEN, "")
-        self._check_interval = entry_options.get(
-            CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
-        )
+        self._check_interval = entry_options.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL)
         self._cache_hours = entry_options.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS)
-        self._github_timeout = entry_options.get(
-            CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT
-        )
-        self._github_retries = entry_options.get(
-            CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES
-        )
-        self._issue_labels_priority = entry_options.get(
-            CONF_ISSUE_LABELS_PRIORITY, DEFAULT_ISSUE_LABELS_PRIORITY
-        )
+        self._github_timeout = entry_options.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT)
+        self._github_retries = entry_options.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES)
+        self._issue_labels_priority = entry_options.get(CONF_ISSUE_LABELS_PRIORITY, DEFAULT_ISSUE_LABELS_PRIORITY)
         self._ignore_list = entry_options.get(CONF_IGNORE_LIST, [])
 
         super().__init__(
@@ -210,18 +202,10 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
             # Step 4: Compute summary stats
             _LOGGER.debug("Step 4/4: Computing summary statistics")
-            self._data.incompatible_count = sum(
-                1 for r in self._data.results if r.status == STATUS_INCOMPATIBLE
-            )
-            self._data.warning_count = sum(
-                1 for r in self._data.results if r.status == STATUS_WARNING
-            )
-            self._data.compatible_count = sum(
-                1 for r in self._data.results if r.status == STATUS_COMPATIBLE
-            )
-            self._data.unknown_count = sum(
-                1 for r in self._data.results if r.status == STATUS_UNKNOWN
-            )
+            self._data.incompatible_count = sum(1 for r in self._data.results if r.status == STATUS_INCOMPATIBLE)
+            self._data.warning_count = sum(1 for r in self._data.results if r.status == STATUS_WARNING)
+            self._data.compatible_count = sum(1 for r in self._data.results if r.status == STATUS_COMPATIBLE)
+            self._data.unknown_count = sum(1 for r in self._data.results if r.status == STATUS_UNKNOWN)
 
             self._data.last_scan = dt.now(UTC).isoformat()
 
@@ -238,12 +222,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
         except Exception as exc:
             elapsed = (dt.now(UTC) - scan_start).total_seconds()
-            _LOGGER.error(
-                "Error updating HACS compatibility data after %.1fs: %s", elapsed, exc
-            )
-            raise UpdateFailed(
-                f"Error updating HACS compatibility data: {exc}"
-            ) from exc
+            _LOGGER.error("Error updating HACS compatibility data after %.1fs: %s", elapsed, exc)
+            raise UpdateFailed(f"Error updating HACS compatibility data: {exc}") from exc
 
     async def _update_ha_versions(self) -> None:
         """Update HA current and next versions."""
@@ -260,9 +240,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
                 current_ver = self._parse_simple_version(ha_version)
                 if current_ver is None:
-                    _LOGGER.warning(
-                        "Could not parse current HA version: %s", ha_version
-                    )
+                    _LOGGER.warning("Could not parse current HA version: %s", ha_version)
                     return
 
                 for release in releases:
@@ -297,15 +275,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                             break  # First stable release > current is the "next" version
 
                 if self._data.ha_next is None:
-                    _LOGGER.debug(
-                        "No newer HA version found beyond current %s", ha_version
-                    )
+                    _LOGGER.debug("No newer HA version found beyond current %s", ha_version)
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 _LOGGER.warning("Could not determine next HA version: %s", exc)
         else:
-            _LOGGER.warning(
-                "GitHub client not available, cannot determine next HA version"
-            )
+            _LOGGER.warning("GitHub client not available, cannot determine next HA version")
 
     @staticmethod
     def _parse_simple_version(version_str: str) -> Any | None:
@@ -342,13 +316,9 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         entry_options = self._config_entry.options
         entry_data = self._config_entry.data
 
-        self._check_interval = entry_options.get(
-            CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
-        )
+        self._check_interval = entry_options.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL)
         self._cache_hours = entry_options.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS)
-        self._issue_labels_priority = entry_options.get(
-            CONF_ISSUE_LABELS_PRIORITY, DEFAULT_ISSUE_LABELS_PRIORITY
-        )
+        self._issue_labels_priority = entry_options.get(CONF_ISSUE_LABELS_PRIORITY, DEFAULT_ISSUE_LABELS_PRIORITY)
         self._ignore_list = entry_options.get(CONF_IGNORE_LIST, [])
         self._github_token = entry_data.get(CONF_GITHUB_TOKEN, "")
 
