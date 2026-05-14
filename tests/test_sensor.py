@@ -22,13 +22,15 @@ class TestGlobalSensorValues:
         coordinator.data = data
         return coordinator
 
+    def _make_description(self, key: str) -> MagicMock:
+        """Create a mock SensorEntityDescription with the given key."""
+        desc = MagicMock()
+        desc.key = key
+        return desc
+
     def test_ha_version_current(self):
         """Test HA version current sensor value."""
-        from custom_components.hacs_compatibility_auditor.sensor import (
-            GLOBAL_SENSOR_DESCRIPTIONS,
-        )
-
-        desc = GLOBAL_SENSOR_DESCRIPTIONS[0]  # ha_version_current
+        desc = self._make_description("ha_version_current")
         coordinator = self._make_coordinator({"ha_current": "2024.6.0"})
         sensor = HacsCompatibilityGlobalSensor(coordinator, desc)
 
@@ -36,11 +38,7 @@ class TestGlobalSensorValues:
 
     def test_ha_version_next(self):
         """Test HA version next sensor value."""
-        from custom_components.hacs_compatibility_auditor.sensor import (
-            GLOBAL_SENSOR_DESCRIPTIONS,
-        )
-
-        desc = GLOBAL_SENSOR_DESCRIPTIONS[1]  # ha_version_next
+        desc = self._make_description("ha_version_next")
         coordinator = self._make_coordinator({"ha_next": "2024.7.0"})
         sensor = HacsCompatibilityGlobalSensor(coordinator, desc)
 
@@ -48,11 +46,7 @@ class TestGlobalSensorValues:
 
     def test_packages_total(self):
         """Test packages total sensor value."""
-        from custom_components.hacs_compatibility_auditor.sensor import (
-            GLOBAL_SENSOR_DESCRIPTIONS,
-        )
-
-        desc = GLOBAL_SENSOR_DESCRIPTIONS[2]  # hacs_packages_total
+        desc = self._make_description("hacs_packages_total")
         coordinator = self._make_coordinator({"packages_total": 15})
         sensor = HacsCompatibilityGlobalSensor(coordinator, desc)
 
@@ -60,11 +54,7 @@ class TestGlobalSensorValues:
 
     def test_incompatible_count(self):
         """Test incompatible count sensor value."""
-        from custom_components.hacs_compatibility_auditor.sensor import (
-            GLOBAL_SENSOR_DESCRIPTIONS,
-        )
-
-        desc = GLOBAL_SENSOR_DESCRIPTIONS[3]  # hacs_incompatible_count
+        desc = self._make_description("hacs_incompatible_count")
         coordinator = self._make_coordinator(
             {
                 "incompatible_count": 2,
@@ -83,11 +73,7 @@ class TestGlobalSensorValues:
 
     def test_no_data_returns_none(self):
         """Test that no coordinator data returns None."""
-        from custom_components.hacs_compatibility_auditor.sensor import (
-            GLOBAL_SENSOR_DESCRIPTIONS,
-        )
-
-        desc = GLOBAL_SENSOR_DESCRIPTIONS[0]
+        desc = self._make_description("ha_version_current")
         coordinator = self._make_coordinator(None)
         sensor = HacsCompatibilityGlobalSensor(coordinator, desc)
 
