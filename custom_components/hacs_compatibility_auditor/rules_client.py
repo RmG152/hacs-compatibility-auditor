@@ -58,9 +58,7 @@ class RulesClient:
 
             assets = release_data.get("assets", [])
             if not assets:
-                _LOGGER.warning(
-                    "No assets found in latest release for %s", self._rules_repo
-                )
+                _LOGGER.warning("No assets found in latest release for %s", self._rules_repo)
                 return
 
             # 2. Find and download index.json
@@ -79,18 +77,14 @@ class RulesClient:
 
             async with self._session.get(index_asset["browser_download_url"]) as resp:
                 if resp.status != 200:
-                    _LOGGER.warning(
-                        "Failed to download index.json (status=%d)", resp.status
-                    )
+                    _LOGGER.warning("Failed to download index.json (status=%d)", resp.status)
                     return
                 index_data = json.loads(await resp.text())
 
             # 3. Check if rules have changed
             new_checksum = index_data.get("checksum", "")
             if new_checksum and new_checksum == self._etag:
-                _LOGGER.debug(
-                    "Rules haven't changed (etag/checksum match), using cache"
-                )
+                _LOGGER.debug("Rules haven't changed (etag/checksum match), using cache")
                 return
 
             # 4. Download each YAML file
@@ -99,17 +93,13 @@ class RulesClient:
 
             for rule_file in RULES_FILES:
                 if rule_file not in asset_map:
-                    _LOGGER.warning(
-                        "Asset %s not found in release, skipping", rule_file
-                    )
+                    _LOGGER.warning("Asset %s not found in release, skipping", rule_file)
                     continue
 
                 url = asset_map[rule_file]
                 async with self._session.get(url) as resp:
                     if resp.status != 200:
-                        _LOGGER.warning(
-                            "Failed to download %s (status=%d)", rule_file, resp.status
-                        )
+                        _LOGGER.warning("Failed to download %s (status=%d)", rule_file, resp.status)
                         continue
 
                     text = await resp.text()

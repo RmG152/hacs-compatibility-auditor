@@ -310,15 +310,19 @@ class TestAsyncUpdate:
         index_json_str = json.dumps({"checksum": "abc123", "updated": "2026-01-01"})
         whitelist_yaml = yaml.dump({"repositories": [{"full_name": "trusted/repo", "ha_version": "*"}]})
         blacklist_yaml = yaml.dump({"repositories": [{"full_name": "bad/repo", "ha_version": "*"}]})
-        false_positives_yaml = yaml.dump({
-            "issues": [
-                {"full_name": "noisy/repo", "issue_number": 1},
-                {"full_name": "noisy/repo", "issue_number": 2},
-                {"full_name": "noisy/repo", "issue_number": 3},
-            ]
-        })
+        false_positives_yaml = yaml.dump(
+            {
+                "issues": [
+                    {"full_name": "noisy/repo", "issue_number": 1},
+                    {"full_name": "noisy/repo", "issue_number": 2},
+                    {"full_name": "noisy/repo", "issue_number": 3},
+                ]
+            }
+        )
         label_overrides_yaml = yaml.dump({"overrides": [{"full_name": "custom/repo", "labels": {"bug": 10}}]})
-        keyword_overrides_yaml = yaml.dump({"overrides": [{"full_name": "custom/repo", "keywords": {"breaking change": 20}}]})
+        keyword_overrides_yaml = yaml.dump(
+            {"overrides": [{"full_name": "custom/repo", "keywords": {"breaking change": 20}}]}
+        )
 
         responses = {
             "releases/latest": self._make_mock_response(json_data=release_json),
