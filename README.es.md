@@ -12,6 +12,7 @@ Integración de Home Assistant que detecta la versión actual y la próxima vers
 - **Análisis de issues en GitHub**: Revisa issues abiertos y recientes para detectar reportes de incompatibilidad, notas de breaking changes y PRs relevantes.
 - **Notificaciones**: Eventos automáticos cuando se detectan incompatibilidades con la próxima versión de HA.
 - **Servicio de re-escaneo**: Fuerza una comprobación inmediata con el servicio `hacs_compatibility_auditor.check_now`.
+- **Motor de reglas comunitarias**: Descarga reglas de la comunidad desde un repositorio de GitHub para whitelist, blacklist o ajustar la detección de compatibilidad por paquete. → [Repositorio de reglas](https://github.com/RmG152/hacs-compatibility-auditor-rules)
 - **Lovelace Card**: Incluye una tarjeta personalizada con resumen filtrable, enlaces a repositorios y acciones rápidas. → [Repositorio de la card](https://github.com/RmG152/hacs-compatibility-auditor-card)
 
 ## Sensores
@@ -63,6 +64,8 @@ Sigue las instrucciones de instalación y configuración en el README de ese rep
 3. **Horas de caché**: Tiempo de caché para consultas a GitHub (por defecto: 12h).
 4. **Timeout de GitHub**: Timeout en segundos para consultas (por defecto: 15s).
 5. **Reintentos de GitHub**: Número de reintentos ante errores (por defecto: 3).
+6. **Usar reglas comunitarias**: Activar o desactivar el motor de reglas de la comunidad (por defecto: activado).
+7. **Repositorio de reglas**: Repositorio de GitHub para reglas comunitarias en formato `owner/repo` (por defecto: `RmG152/hacs-compatibility-auditor-rules`).
 
 ### Opciones avanzadas
 
@@ -70,6 +73,7 @@ Accede a las opciones desde Configuración → Integraciones → HACS Compatibil
 
 - **Labels de prioridad**: Labels de GitHub que indican alta severidad (separadas por coma). Por defecto: `breaking-change,breaking,incompatible,upgrade,compatibility`.
 - **Lista de ignorados**: Nombres de repositorios a ignorar (separados por coma).
+- **Repositorio de reglas**: Repositorio de GitHub para reglas comunitarias (por defecto: `RmG152/hacs-compatibility-auditor-rules`).
 
 ### Token de GitHub
 
@@ -87,27 +91,19 @@ Fuerza una re-comprobación inmediata de la compatibilidad de todos los paquetes
 service: hacs_compatibility_auditor.check_now
 ```
 
-## Algoritmo de comprobación
+## Reglas Comunitarias
 
-1. Obtiene la versión actual de HA desde la API interna.
-2. Consulta releases del repositorio `home-assistant/core` en GitHub para determinar la próxima versión.
-3. Enumera paquetes HACS desde múltiples fuentes (datos internos de HACS, `.storage`, directorio de repositorios).
-4. Para cada paquete:
-   - Consulta `hacs.json` / `manifest.json` para comprobar requisitos declarados de versión HA.
-   - Obtiene releases/tags más recientes del repositorio.
-   - Busca issues abiertos/recientes con labels y keywords de compatibilidad.
-   - Analiza notas de release para detectar breaking changes.
-   - Determina estado final: `compatible`, `warning` o `incompatible`.
-5. Expone resultados en sensores y eventos.
+La integración incluye un motor de reglas impulsado por la comunidad que descarga sobreescrituras de compatibilidad desde un repositorio de GitHub. Esto permite ajustar la detección sin necesidad de actualizar la integración.
 
-### Criterios de estado
+- **Repositorio por defecto**: [`RmG152/hacs-compatibility-auditor-rules`](https://github.com/RmG152/hacs-compatibility-auditor-rules)
+- **Activado por defecto**: Se puede desactivar en las opciones de la integración.
+- **Tipos de reglas**:
+  - **Whitelist / Blacklist**: Forzar paquetes como compatibles o incompatibles por versión de HA.
+  - **Falsos positivos**: Ignorar issues específicos de GitHub que disparan alertas incorrectamente.
+  - **Sobreescritura de labels / keywords**: Ajustar pesos de prioridad para labels y keywords por repositorio.
+- **Frecuencia de actualización**: Las reglas se descargan del último release de GitHub cada 12 horas.
 
-| Estado | Criterio |
-|--------|----------|
-| `compatible` | Manifest compatible, sin issues relevantes |
-| `warning` | Issues de compatibilidad abiertos (prioridad media) o breaking changes en releases recientes |
-| `incompatible` | Manifest incompatible con versión actual o issue confirmado con label de alta severidad |
-| `unknown` | Error al obtener datos del paquete |
+> Para detalles sobre el algoritmo de comprobación de compatibilidad, consulta [docs/compatibility-flow.md](docs/compatibility-flow.md).
 
 ## Eventos
 

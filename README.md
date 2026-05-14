@@ -14,6 +14,7 @@ Home Assistant integration that detects the current and next version of Home Ass
 - **GitHub issue analysis**: Reviews open and recent issues for incompatibility reports, breaking change notes, and relevant PRs.
 - **Notifications**: Automatic events when incompatibilities are detected with the next HA version.
 - **Re-scan service**: Force an immediate compatibility check with the `hacs_compatibility_auditor.check_now` service.
+- **Community rules engine**: Downloads community-sourced rules from a GitHub repository to whitelist, blacklist, or fine-tune compatibility detection per package. → [Default rules repo](https://github.com/RmG152/hacs-compatibility-auditor-rules)
 - **Lovelace Card**: Includes a custom card with filterable summary, repository links, and quick actions. → [Card repository](https://github.com/RmG152/hacs-compatibility-auditor-card)
 
 ## Sensors
@@ -65,6 +66,8 @@ Follow the installation and configuration instructions in that repository's READ
 3. **Cache hours**: Cache time for GitHub queries (default: 12h).
 4. **GitHub timeout**: Timeout in seconds for queries (default: 15s).
 5. **GitHub retries**: Number of retries on errors (default: 3).
+6. **Use community rules**: Enable or disable the community rules engine (default: enabled).
+7. **Rules repository**: GitHub repository for community rules in `owner/repo` format (default: `RmG152/hacs-compatibility-auditor-rules`).
 
 ### Advanced options
 
@@ -72,6 +75,7 @@ Access options from Settings → Integrations → HACS Compatibility Auditor →
 
 - **Priority labels**: GitHub labels that indicate high severity (comma-separated). Default: `breaking-change,breaking,incompatible,upgrade,compatibility`.
 - **Ignore list**: Repository names to ignore (comma-separated).
+- **Rules repo**: GitHub repository for community rules (default: `RmG152/hacs-compatibility-auditor-rules`).
 
 ### GitHub Token
 
@@ -89,27 +93,19 @@ Force an immediate re-check of all HACS packages' compatibility.
 service: hacs_compatibility_auditor.check_now
 ```
 
-## Check Algorithm
+## Community Rules
 
-1. Gets the current HA version from the internal API.
-2. Queries releases from the `home-assistant/core` repository on GitHub to determine the next version.
-3. Enumerates HACS packages from multiple sources (HACS internal data, `.storage`, repository directory).
-4. For each package:
-   - Checks `hacs.json` / `manifest.json` for declared HA version requirements.
-   - Fetches the latest releases/tags from the repository.
-   - Searches open/recent issues with compatibility labels and keywords.
-   - Analyzes release notes for breaking changes.
-   - Determines final status: `compatible`, `warning`, or `incompatible`.
-5. Exposes results in sensors and events.
+The integration includes a community-driven rules engine that downloads compatibility overrides from a GitHub repository. This allows fine-tuning detection without updating the integration.
 
-### Status criteria
+- **Default repository**: [`RmG152/hacs-compatibility-auditor-rules`](https://github.com/RmG152/hacs-compatibility-auditor-rules)
+- **Enabled by default**: Can be disabled in integration options.
+- **Rule types**:
+  - **Whitelist / Blacklist**: Force-mark packages as compatible or incompatible per HA version.
+  - **False positives**: Ignore specific GitHub issues that incorrectly trigger warnings.
+  - **Label / Keyword overrides**: Adjust priority weights for issue labels and keywords on a per-repository basis.
+- **Update frequency**: Rules are downloaded from the latest GitHub release every 12 hours.
 
-| Status | Criteria |
-|--------|----------|
-| `compatible` | Manifest compatible, no relevant issues |
-| `warning` | Open compatibility issues (medium priority) or breaking changes in recent releases |
-| `incompatible` | Manifest incompatible with current version or confirmed issue with high-severity label |
-| `unknown` | Error fetching package data |
+> For details on the compatibility check algorithm, see [docs/compatibility-flow.md](docs/compatibility-flow.md).
 
 ## Events
 
