@@ -219,6 +219,7 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
             "ai_reasoning": ai.get("reasoning", ""),
             "ai_provider": ai.get("provider_used", ""),
             "ai_analysis": ai,
+            "ai_categorizations": data.get("ai_categorizations", {}),
         }
 
     @property

@@ -170,6 +170,39 @@ Present when AI analysis has been run on this package:
 | `raw_response` | `string` | Raw AI response text (truncated to 2000 chars) |
 | `error` | `string` | Error message if the AI request failed |
 
+### `ai_categorizations` object schema
+
+Present when AI issue categorization has been run on this package. A dict keyed by issue number:
+
+```json
+{
+  "42": {
+    "category": "false_positive",
+    "confidence": 0.92,
+    "reasoning": "The issue describes a user configuration problem.",
+    "provider_used": "My OpenAI",
+    "error": ""
+  },
+  "57": {
+    "category": "true_positive",
+    "confidence": 0.88,
+    "reasoning": "The issue references a deprecated API removed in HA 2026.7.",
+    "provider_used": "My OpenAI",
+    "error": ""
+  }
+}
+```
+
+Each value follows `IssueCategoryResult.to_dict()`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `category` | `string` | `true_positive`, `false_positive`, `config_issue`, `feature_request`, `unrelated`, `uncertain` |
+| `confidence` | `float` | Confidence score between 0.0 and 1.0 |
+| `reasoning` | `string` | AI reasoning text |
+| `provider_used` | `string` | Name of the AI provider |
+| `error` | `string` | Error message if the request failed |
+
 ### Icon behavior
 
 | Status | Icon |

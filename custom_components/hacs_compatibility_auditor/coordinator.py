@@ -748,9 +748,22 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             release_notes=result.data.get("matching_releases"),
         )
 
+        ai_dict = ai_result.to_dict()
+
+        # Store AI result back into the result list so sensors update
+        for i, r in enumerate(self._data.results):
+            if r.get("repository") == repository:
+                self._data.results[i]["ai_analysis"] = ai_dict
+                if self._cache_manager:
+                    self._cache_manager.set_entry(repository, self._data.results[i], self._data.ha_current)
+                    await self._cache_manager.async_save()
+                break
+
+        self.async_set_updated_data(self._data.to_dict())
+
         return {
             "success": not ai_result.error,
-            "result": ai_result.to_dict(),
+            "result": ai_dict,
             "algorithm_status": result.status,
         }
 
@@ -802,9 +815,25 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 provider_name=provider_name,
             )
 
+            # Store categorization in the result list
+            result_dict = result.to_dict()
+            for i, r in enumerate(self._data.results):
+                if r.get("repository") == repository:
+                    categorizations = dict(r.get("ai_categorizations", {}))
+                    categorizations[str(issue_number)] = result_dict
+                    self._data.results[i]["ai_categorizations"] = categorizations
+                    if self._cache_manager:
+                        self._cache_manager.set_entry(repository, self._data.results[i], self._data.ha_current)
+                    break
+
+            if self._cache_manager:
+                await self._cache_manager.async_save()
+
+            self.async_set_updated_data(self._data.to_dict())
+
             return {
                 "success": not result.error,
-                "result": result.to_dict(),
+                "result": result_dict,
             }
 
         except (TimeoutError, aiohttp.ClientError, ValueError, KeyError) as exc:
@@ -915,6 +944,9 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 )
 
                 self._data.results[i]["ai_analysis"] = ai_result.to_dict()
+
+                if self._cache_manager:
+                    self._cache_manager.set_entry(repository, self._data.results[i], self._data.ha_current)
 
                 analyzed.append(
                     {

@@ -134,7 +134,7 @@ ai_confirm_report:
         text:
     action:
       name: Acción
-      description: Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility)
+      description: "Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility)"
       required: false
       example: "add_false_positive"
       selector:
