@@ -20,24 +20,36 @@ def client(mock_session):
     """Create a RulesClient with default settings and pre-loaded rules."""
     c = RulesClient(session=mock_session, hass_version="2026.4.0")
     c._rules = {
-        "whitelist": [
-            {"repository": "trusted/owner", "ha_version": "*"},
-            {"repository": "versioned/repo", "ha_version": ">=2026.1.0"},
-            {"repository": "old/repo", "ha_version": "<2026.5.0"},
-        ],
-        "blacklist": [
-            {"repository": "bad/actor", "ha_version": "*"},
-            {"repository": "broken/package", "ha_version": ">=2026.1.0,<2026.6.0"},
-        ],
+        "whitelist": {
+            "repositories": [
+                {"full_name": "trusted/owner", "ha_version": "*"},
+                {"full_name": "versioned/repo", "ha_version": ">=2026.1.0"},
+                {"full_name": "old/repo", "ha_version": "<2026.5.0"},
+            ]
+        },
+        "blacklist": {
+            "repositories": [
+                {"full_name": "bad/actor", "ha_version": "*"},
+                {"full_name": "broken/package", "ha_version": ">=2026.1.0,<2026.6.0"},
+            ]
+        },
         "false_positives": {
-            "noisy/repo": [42, 99, 100],
-            "another/repo": [5],
+            "issues": [
+                {"full_name": "noisy/repo", "issue_number": 42},
+                {"full_name": "noisy/repo", "issue_number": 99},
+                {"full_name": "noisy/repo", "issue_number": 100},
+                {"full_name": "another/repo", "issue_number": 5},
+            ]
         },
         "label_overrides": {
-            "custom/repo": {"upgrade": 12, "bug": 0},
+            "overrides": [
+                {"full_name": "custom/repo", "labels": {"upgrade": 12, "bug": 0}},
+            ]
         },
         "keyword_overrides": {
-            "custom/repo": {"breaking change": 15, "deprecated": 0},
+            "overrides": [
+                {"full_name": "custom/repo", "keywords": {"breaking change": 15, "deprecated": 0}},
+            ]
         },
     }
     return c
@@ -87,9 +99,11 @@ class TestWhitelist:
         """Test repo with non-matching HA version is not whitelisted."""
         c = RulesClient(session=MagicMock(), hass_version="2027.1.0")
         c._rules = {
-            "whitelist": [
-                {"repository": "old/repo", "ha_version": "<2026.5.0"},
-            ]
+            "whitelist": {
+                "repositories": [
+                    {"full_name": "old/repo", "ha_version": "<2026.5.0"},
+                ]
+            }
         }
         assert c.is_whitelisted("old/repo") is False
 
@@ -101,16 +115,18 @@ class TestWhitelist:
         """Test that without hass_version, all entries match."""
         c = RulesClient(session=mock_session)
         c._rules = {
-            "whitelist": [
-                {"repository": "any/repo", "ha_version": ">=2026.1.0"},
-            ]
+            "whitelist": {
+                "repositories": [
+                    {"full_name": "any/repo", "ha_version": ">=2026.1.0"},
+                ]
+            }
         }
         assert c.is_whitelisted("any/repo") is True
 
     def test_whitelist_empty(self, mock_session):
         """Test that empty whitelist returns False."""
         c = RulesClient(session=mock_session)
-        c._rules = {"whitelist": []}
+        c._rules = {"whitelist": {"repositories": []}}
         assert c.is_whitelisted("anything/repo") is False
 
 
@@ -132,9 +148,11 @@ class TestBlacklist:
         """Test repo outside HA version range is not blacklisted."""
         c = RulesClient(session=MagicMock(), hass_version="2027.1.0")
         c._rules = {
-            "blacklist": [
-                {"repository": "broken/package", "ha_version": ">=2026.1.0,<2026.6.0"},
-            ]
+            "blacklist": {
+                "repositories": [
+                    {"full_name": "broken/package", "ha_version": ">=2026.1.0,<2026.6.0"},
+                ]
+            }
         }
         assert c.is_blacklisted("broken/package") is False
 
@@ -145,7 +163,7 @@ class TestBlacklist:
     def test_blacklist_empty(self, mock_session):
         """Test that empty blacklist returns False."""
         c = RulesClient(session=mock_session)
-        c._rules = {"blacklist": []}
+        c._rules = {"blacklist": {"repositories": []}}
         assert c.is_blacklisted("anything/repo") is False
 
 
@@ -290,11 +308,17 @@ class TestAsyncUpdate:
             ]
         }
         index_json_str = json.dumps({"checksum": "abc123", "updated": "2026-01-01"})
-        whitelist_yaml = yaml.dump([{"repository": "trusted/repo", "ha_version": "*"}])
-        blacklist_yaml = yaml.dump([{"repository": "bad/repo", "ha_version": "*"}])
-        false_positives_yaml = yaml.dump({"noisy/repo": [1, 2, 3]})
-        label_overrides_yaml = yaml.dump({"custom/repo": {"bug": 10}})
-        keyword_overrides_yaml = yaml.dump({"custom/repo": {"breaking change": 20}})
+        whitelist_yaml = yaml.dump({"repositories": [{"full_name": "trusted/repo", "ha_version": "*"}]})
+        blacklist_yaml = yaml.dump({"repositories": [{"full_name": "bad/repo", "ha_version": "*"}]})
+        false_positives_yaml = yaml.dump({
+            "issues": [
+                {"full_name": "noisy/repo", "issue_number": 1},
+                {"full_name": "noisy/repo", "issue_number": 2},
+                {"full_name": "noisy/repo", "issue_number": 3},
+            ]
+        })
+        label_overrides_yaml = yaml.dump({"overrides": [{"full_name": "custom/repo", "labels": {"bug": 10}}]})
+        keyword_overrides_yaml = yaml.dump({"overrides": [{"full_name": "custom/repo", "keywords": {"breaking change": 20}}]})
 
         responses = {
             "releases/latest": self._make_mock_response(json_data=release_json),
@@ -330,7 +354,7 @@ class TestAsyncUpdate:
     async def test_update_failure_keeps_cache(self, mock_session):
         """Test that a failed update keeps the existing cache."""
         client = RulesClient(session=mock_session)
-        client._rules = {"whitelist": [{"repository": "cached/repo", "ha_version": "*"}]}
+        client._rules = {"whitelist": {"repositories": [{"full_name": "cached/repo", "ha_version": "*"}]}}
         client._last_update = 100.0
 
         mock_session.get = MagicMock(return_value=self._make_mock_response(status=500))
@@ -382,7 +406,7 @@ class TestAsyncUpdate:
 
         client = RulesClient(session=mock_session)
         client._etag = "same_checksum"
-        client._rules = {"whitelist": [{"repository": "old/repo", "ha_version": "*"}]}
+        client._rules = {"whitelist": {"repositories": [{"full_name": "old/repo", "ha_version": "*"}]}}
 
         await client.async_update()
 

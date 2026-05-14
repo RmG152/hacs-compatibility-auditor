@@ -161,57 +161,71 @@ class RulesClient:
 
     def is_whitelisted(self, full_name: str) -> bool:
         """True if the repo is in whitelist and its ha_version matches."""
-        entries = self._rules.get("whitelist", [])
-        if isinstance(entries, list):
-            for entry in entries:
-                if isinstance(entry, dict) and entry.get("repository") == full_name:
-                    return self._match_ha_version(entry)
+        data = self._rules.get("whitelist", {})
+        if isinstance(data, dict):
+            repositories = data.get("repositories", [])
+            if isinstance(repositories, list):
+                for entry in repositories:
+                    if isinstance(entry, dict) and entry.get("full_name") == full_name:
+                        return self._match_ha_version(entry)
         return False
 
     def is_blacklisted(self, full_name: str) -> bool:
         """True if the repo is in blacklist and its ha_version matches."""
-        entries = self._rules.get("blacklist", [])
-        if isinstance(entries, list):
-            for entry in entries:
-                if isinstance(entry, dict) and entry.get("repository") == full_name:
-                    return self._match_ha_version(entry)
+        data = self._rules.get("blacklist", {})
+        if isinstance(data, dict):
+            repositories = data.get("repositories", [])
+            if isinstance(repositories, list):
+                for entry in repositories:
+                    if isinstance(entry, dict) and entry.get("full_name") == full_name:
+                        return self._match_ha_version(entry)
         return False
 
     def get_false_positives(self, full_name: str) -> set[int]:
         """Returns a set of issue numbers to ignore for this repo."""
-        entries = self._rules.get("false_positives", {})
-        if isinstance(entries, dict):
-            issue_numbers = entries.get(full_name, [])
-            if isinstance(issue_numbers, list):
+        data = self._rules.get("false_positives", {})
+        if isinstance(data, dict):
+            issues = data.get("issues", [])
+            if isinstance(issues, list):
                 return {
-                    int(n)
-                    for n in issue_numbers
-                    if isinstance(n, (int, str)) and str(n).isdigit()
+                    int(entry["issue_number"])
+                    for entry in issues
+                    if isinstance(entry, dict)
+                    and entry.get("full_name") == full_name
+                    and isinstance(entry.get("issue_number"), int)
                 }
         return set()
 
     def get_label_overrides(self, full_name: str) -> dict[str, int]:
         """Returns label→weight override for this repo."""
-        entries = self._rules.get("label_overrides", {})
-        if isinstance(entries, dict):
-            overrides = entries.get(full_name, {})
-            if isinstance(overrides, dict):
-                return {
-                    str(k): int(v)
-                    for k, v in overrides.items()
-                    if isinstance(v, (int, str)) and str(v).lstrip("-").isdigit()
-                }
+        data = self._rules.get("label_overrides", {})
+        if isinstance(data, dict):
+            overrides = data.get("overrides", [])
+            if isinstance(overrides, list):
+                for entry in overrides:
+                    if isinstance(entry, dict) and entry.get("full_name") == full_name:
+                        labels = entry.get("labels", {})
+                        if isinstance(labels, dict):
+                            return {
+                                str(k): int(v)
+                                for k, v in labels.items()
+                                if isinstance(v, (int, str)) and str(v).lstrip("-").isdigit()
+                            }
         return {}
 
     def get_keyword_overrides(self, full_name: str) -> dict[str, int]:
         """Returns keyword→weight override for this repo."""
-        entries = self._rules.get("keyword_overrides", {})
-        if isinstance(entries, dict):
-            overrides = entries.get(full_name, {})
-            if isinstance(overrides, dict):
-                return {
-                    str(k): int(v)
-                    for k, v in overrides.items()
-                    if isinstance(v, (int, str)) and str(v).lstrip("-").isdigit()
-                }
+        data = self._rules.get("keyword_overrides", {})
+        if isinstance(data, dict):
+            overrides = data.get("overrides", [])
+            if isinstance(overrides, list):
+                for entry in overrides:
+                    if isinstance(entry, dict) and entry.get("full_name") == full_name:
+                        keywords = entry.get("keywords", {})
+                        if isinstance(keywords, dict):
+                            return {
+                                str(k): int(v)
+                                for k, v in keywords.items()
+                                if isinstance(v, (int, str)) and str(v).lstrip("-").isdigit()
+                            }
         return {}

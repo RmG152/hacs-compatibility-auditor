@@ -1,6 +1,4 @@
 /.vscode
 /tests/__pycache__
 /custom_components/hacs_compatibility_auditor/__pycache__
-/hacs-compatibility-auditor-card/node_modules
-/hacs-compatibility-auditor-card/www/
-/hacs-compatibility-auditor-card/package-lock.json
+/debug
