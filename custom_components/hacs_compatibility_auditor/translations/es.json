@@ -37,7 +37,8 @@
           "github_timeout": "Timeout de consultas GitHub (segundos)",
           "github_retries": "Reintentos de consultas GitHub",
           "rules_enabled": "Usar reglas de la comunidad",
-          "rules_repo": "Repositorio de reglas (owner/repo)"
+          "rules_repo": "Repositorio de reglas (owner/repo)",
+          "batch_size": "Tamaño de lote (paquetes comprobados simultáneamente)"
         }
       }
     }
@@ -65,6 +66,16 @@
     "check_now": {
       "name": "Forzar comprobación",
       "description": "Fuerza una re-comprobación inmediata de la compatibilidad de todos los paquetes HACS."
+    },
+    "check_package": {
+      "name": "Comprobar paquete",
+      "description": "Comprueba la compatibilidad de un paquete HACS específico por repositorio (formato owner/repo).",
+      "fields": {
+        "repository": {
+          "name": "Repositorio",
+          "description": "Nombre completo del repositorio (ej. 'home-assistant/core')"
+        }
+      }
     }
   }
 }

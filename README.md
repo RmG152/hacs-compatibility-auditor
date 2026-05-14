@@ -14,6 +14,9 @@ Home Assistant integration that detects the current and next version of Home Ass
 - **GitHub issue analysis**: Reviews open and recent issues for incompatibility reports, breaking change notes, and relevant PRs.
 - **Notifications**: Automatic events when incompatibilities are detected with the next HA version.
 - **Re-scan service**: Force an immediate compatibility check with the `hacs_compatibility_auditor.check_now` service.
+- **Per-package check**: Check a single HACS package with `hacs_compatibility_auditor.check_package` without waiting for a full scan.
+- **Persistent cache**: Results survive HA restarts. On restart, cached data is loaded from disk instantly and only expired entries are re-fetched.
+- **Batch processing**: Packages are checked in concurrent batches (default 5), preventing timeouts in large installations. Progress is saved after each batch.
 - **Community rules engine**: Downloads community-sourced rules from a GitHub repository to whitelist, blacklist, or fine-tune compatibility detection per package. → [Default rules repo](https://github.com/RmG152/hacs-compatibility-auditor-rules)
 - **Lovelace Card**: Includes a custom card with filterable summary, repository links, and quick actions. → [Card repository](https://github.com/RmG152/hacs-compatibility-auditor-card)
 
@@ -29,6 +32,18 @@ The integration creates the following sensors:
 | `sensor.hacs_incompatible_count` | Number of incompatible packages |
 
 Additionally, one sensor is created per installed HACS package (`sensor.hacs_compatibility_auditor_package_*`).
+
+Global sensors include the following state attributes:
+
+| Attribute | Sensor | Description |
+|-----------|--------|-------------|
+| `scan_in_progress` | All | Whether a batch scan is currently running |
+| `scan_progress` | All | Number of packages checked so far |
+| `scan_total` | All | Total number of packages to check |
+| `incompatible_packages` | `hacs_incompatible_count` | List of incompatible package names |
+| `warning_packages` | `hacs_incompatible_count` | List of warning package names |
+| `rules_enabled` | `hacs_incompatible_count` | Whether community rules are enabled |
+| `rules_loaded` | `hacs_incompatible_count` | Whether rules were successfully loaded |
 
 ## Installation
 
@@ -76,6 +91,7 @@ Access options from Settings → Integrations → HACS Compatibility Auditor →
 - **Priority labels**: GitHub labels that indicate high severity (comma-separated). Default: `breaking-change,breaking,incompatible,upgrade,compatibility`.
 - **Ignore list**: Repository names to ignore (comma-separated).
 - **Rules repo**: GitHub repository for community rules (default: `RmG152/hacs-compatibility-auditor-rules`).
+- **Batch size**: Number of packages to check concurrently (default: 5, max: 50). Larger batches speed up scans but consume more GitHub API quota simultaneously.
 
 ### GitHub Token
 
@@ -83,7 +99,9 @@ Access options from Settings → Integrations → HACS Compatibility Auditor →
 2. Create a new token (classic) with minimal permissions: `public_repo` (read-only).
 3. Copy the token and paste it into the integration configuration.
 
-## Service
+> For the full service API schema including response formats and frontend usage examples, see [docs/services.md](docs/services.md).
+
+## Services
 
 ### `hacs_compatibility_auditor.check_now`
 
@@ -92,6 +110,36 @@ Force an immediate re-check of all HACS packages' compatibility.
 ```yaml
 service: hacs_compatibility_auditor.check_now
 ```
+
+### `hacs_compatibility_auditor.check_package`
+
+Check a single HACS package's compatibility by repository name, without waiting for a full scan.
+
+```yaml
+service: hacs_compatibility_auditor.check_package
+data:
+  repository: "owner/repo-name"
+```
+
+Returns the compatibility result for that package.
+
+## Caching
+
+The integration uses a **two-layer cache** to minimize GitHub API calls and survive restarts:
+
+1. **In-memory cache** (GitHubClient): Stores raw API responses for the configured TTL (default 12h). Cleared on forced refresh.
+2. **Persistent disk cache** (CacheManager): Stores individual package compatibility results in `.storage/hacs_compatibility_auditor_cache.json`. Survives HA restarts.
+
+**On restart:**
+1. The disk cache is loaded first — no internet access needed.
+2. For each package, if the cached result is still valid (TTL not expired AND HA version unchanged), it is used directly.
+3. Only packages with expired, missing, or invalidated cache entries are fetched from GitHub.
+4. Packages are checked in batches (default 5 concurrent) and disk cache is updated after each batch.
+
+**Cache invalidation:**
+- TTL can be configured via `cache_hours` option (default: 12h).
+- If the Home Assistant version changes, all cached entries are invalidated (results may differ per HA version).
+- Calling `check_now` clears both cache layers and forces a full refresh.
 
 ## Community Rules
 

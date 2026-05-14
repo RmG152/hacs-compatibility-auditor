@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
@@ -372,9 +373,9 @@ class GitHubClient:
         # First, search by labels if provided
         if labels:
             for label in labels[:5]:  # Limit to avoid too many API calls
-                url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues?state={state}&labels={label}&per_page={per_page}"
+                url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues?state={state}&labels={quote(label)}&per_page={per_page}"
                 if since:
-                    url += f"&since={since}"
+                    url += f"&since={quote(since)}"
 
                 _LOGGER.debug("Searching issues by label '%s' for %s/%s", label, owner, repo)
                 data = await self._request(url)
@@ -411,7 +412,7 @@ class GitHubClient:
         if keywords:
             for keyword in keywords[:3]:  # Limit keyword searches
                 search_query = f"repo:{owner}/{repo} is:issue is:{state} {keyword}"
-                url = f"{GITHUB_API_BASE}/search/issues?q={search_query}&per_page={per_page}"
+                url = f"{GITHUB_API_BASE}/search/issues?q={quote(search_query)}&per_page={per_page}"
                 _LOGGER.debug("Searching issues by keyword '%s' for %s/%s", keyword, owner, repo)
                 data = await self._request(url)
                 if data and isinstance(data, dict) and "items" in data:

@@ -8,11 +8,13 @@ CONF_IGNORE_LIST = "ignore_list"
 CONF_CACHE_HOURS = "cache_hours"
 CONF_GITHUB_TIMEOUT = "github_timeout"
 CONF_GITHUB_RETRIES = "github_retries"
+CONF_BATCH_SIZE = "batch_size"
 
 DEFAULT_CHECK_INTERVAL = 12  # hours
 DEFAULT_CACHE_HOURS = 12
 DEFAULT_GITHUB_TIMEOUT = 15  # seconds
 DEFAULT_GITHUB_RETRIES = 3
+DEFAULT_BATCH_SIZE = 5
 
 DEFAULT_ISSUE_LABELS_PRIORITY = [
     "breaking-change",
@@ -73,6 +75,7 @@ PACKAGE_TYPE_PYTHON_SCRIPT = "python_script"
 
 # Service names
 SERVICE_CHECK_NOW = "check_now"
+SERVICE_CHECK_PACKAGE = "check_package"
 
 # Platform
 PLATFORMS = ["sensor"]
