@@ -22,6 +22,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     DOMAIN,
     PLATFORMS,
+    SERVICE_AI_ANALYZE_ALL,
     SERVICE_AI_ANALYZE_PACKAGE,
     SERVICE_AI_CATEGORIZE_ISSUE,
     SERVICE_CHECK_NOW,
@@ -68,6 +69,12 @@ SERVICE_REPORT_TO_RULES_SCHEMA = vol.Schema(
         vol.Required("category"): cv.string,
         vol.Required("reasoning"): cv.string,
         vol.Required("action"): cv.string,
+    }
+)
+
+SERVICE_AI_ANALYZE_ALL_SCHEMA = vol.Schema(
+    {
+        vol.Optional("provider"): cv.string,
     }
 )
 
@@ -166,6 +173,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         return await coordinator.async_report_to_rules(repository, issue_number, category, reasoning, action)
 
+    async def async_ai_analyze_all(call: ServiceCall) -> ServiceResponse:
+        """Handle the ai_analyze_all service call."""
+        provider = call.data.get("provider")
+        _LOGGER.info("AI analyzing all non-compatible packages")
+        return await coordinator.async_analyze_all(provider)
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_AI_ANALYZE_PACKAGE,
@@ -187,6 +200,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         SERVICE_REPORT_TO_RULES,
         async_report_to_rules,
         schema=SERVICE_REPORT_TO_RULES_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_AI_ANALYZE_ALL,
+        async_ai_analyze_all,
+        schema=SERVICE_AI_ANALYZE_ALL_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
 
@@ -229,6 +250,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for service in [
         SERVICE_CHECK_NOW,
         SERVICE_CHECK_PACKAGE,
+        SERVICE_AI_ANALYZE_ALL,
         SERVICE_AI_ANALYZE_PACKAGE,
         SERVICE_AI_CATEGORIZE_ISSUE,
         SERVICE_REPORT_TO_RULES,

@@ -163,6 +163,16 @@
           "description": "Tipo de reporte (add_false_positive o report_incompatibility)"
         }
       }
+    },
+    "ai_analyze_all": {
+      "name": "Analizar todo con IA",
+      "description": "Ejecuta análisis con IA sobre todos los paquetes que no estén en estado compatible.",
+      "fields": {
+        "provider": {
+          "name": "Proveedor IA",
+          "description": "Nombre del proveedor de IA a utilizar (opcional, usa el primero configurado)"
+        }
+      }
     }
   }
 }

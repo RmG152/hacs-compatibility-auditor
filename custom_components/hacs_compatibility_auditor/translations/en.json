@@ -163,6 +163,16 @@
           "description": "Type of report (add_false_positive or report_incompatibility)"
         }
       }
+    },
+    "ai_analyze_all": {
+      "name": "Analyze all with AI",
+      "description": "Runs AI analysis on all packages that are not in compatible status.",
+      "fields": {
+        "provider": {
+          "name": "AI Provider",
+          "description": "AI provider name to use (optional, uses the first configured provider)"
+        }
+      }
     }
   }
 }

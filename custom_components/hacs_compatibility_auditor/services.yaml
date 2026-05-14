@@ -108,3 +108,15 @@ report_to_rules:
           options:
             - "add_false_positive"
             - "report_incompatibility"
+
+ai_analyze_all:
+  name: Analizar todo con IA
+  description: Ejecuta análisis con IA sobre todos los paquetes que no estén en estado compatible.
+  fields:
+    provider:
+      name: Proveedor IA
+      description: Nombre del proveedor de IA a utilizar (opcional, usa el primero configurado)
+      required: false
+      example: "Mi OpenAI"
+      selector:
+        text:

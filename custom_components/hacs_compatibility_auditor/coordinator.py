@@ -48,6 +48,7 @@ from .const import (
     DOMAIN,
     GITHUB_API_BASE,
     STATUS_COMPATIBLE,
+    STATUS_IGNORED,
     STATUS_INCOMPATIBLE,
     STATUS_UNKNOWN,
     STATUS_WARNING,
@@ -853,6 +854,89 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 "issue_number": issue_data.get("number", 0),
             }
         return {"success": False, "error": "Failed to create issue on rules repository"}
+
+    async def async_analyze_all(
+        self,
+        provider_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Run AI analysis on all packages not marked as compatible."""
+        if not self._ai_manager:
+            return {"success": False, "error": "AI is not configured or enabled"}
+        if not self._checker:
+            return {"success": False, "error": "Compatibility checker not initialized"}
+
+        analyzed: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        for i, result_dict in enumerate(self._data.results):
+            status = result_dict.get("status", "")
+            if status == STATUS_COMPATIBLE or status == STATUS_IGNORED:
+                continue
+
+            repository = result_dict.get("repository", "")
+            if not repository:
+                continue
+
+            pkg = next((p for p in self._data.packages if p.full_name == repository), None)
+            if not pkg:
+                errors.append({"repository": repository, "error": "Package not found"})
+                continue
+
+            try:
+                result = await self._checker.check_package(
+                    pkg,
+                    self._data.ha_current,
+                    self._data.ha_next,
+                )
+                fresh = result.to_dict()
+                issues = [
+                    {
+                        "title": i.get("title", ""),
+                        "url": i.get("url", ""),
+                        "labels": i.get("labels", []),
+                        "priority": i.get("priority", 0),
+                        "body": "",
+                    }
+                    for i in fresh.get("issues_relevant", [])
+                ]
+
+                ai_result = await self._ai_manager.analyze_package(
+                    package_name=pkg.name,
+                    package_repo=pkg.full_name,
+                    installed_version=pkg.installed_version or "",
+                    ha_current=self._data.ha_current,
+                    ha_next=self._data.ha_next,
+                    manifest_ha=result.manifest_ha_requirement,
+                    current_status=result.status,
+                    issues=issues,
+                    provider_name=provider_name,
+                    reason=result.reason,
+                    release_notes=result.data.get("matching_releases"),
+                )
+
+                self._data.results[i]["ai_analysis"] = ai_result.to_dict()
+
+                analyzed.append(
+                    {
+                        "repository": repository,
+                        "status": result.status,
+                        "ai_result": ai_result.to_dict(),
+                    }
+                )
+            except Exception as exc:
+                _LOGGER.warning("AI analysis failed for %s: %s", repository, exc)
+                errors.append({"repository": repository, "error": str(exc)})
+
+        self.async_set_updated_data(self._data.to_dict())
+
+        return {
+            "success": True,
+            "total": len(analyzed) + len(errors),
+            "analyzed": len(analyzed),
+            "errors": len(errors),
+            "results": analyzed,
+            "error_details": errors,
+        }
 
     async def async_check_single_package(self, repository: str) -> dict[str, Any] | None:
         """Check compatibility for a single package by repository name."""

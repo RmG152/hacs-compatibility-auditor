@@ -38,9 +38,38 @@
           "github_retries": "Reintents de consultes GitHub",
           "rules_enabled": "Utilitzar regles de la comunitat",
           "rules_repo": "Repositori de regles (owner/repo)",
-          "batch_size": "Mida de lot (paquets comprovats simultàniament)"
+          "batch_size": "Mida de lot (paquets comprovats simultàniament)",
+          "ai_enabled": "Habilitar anàlisi amb IA",
+          "ai_auto_analyze": "Analitzar automàticament amb IA durant l'escaneig per lots",
+          "manage_ai_providers": "Configurar proveïdors d'IA (marca per gestionar)"
+        }
+      },
+      "ai_providers": {
+        "title": "Proveïdors d'IA",
+        "description": "{providers}",
+        "data": {
+          "action": "Acció"
+        }
+      },
+      "ai_add_provider": {
+        "title": "Afegir/Editar proveïdor d'IA",
+        "description": "Configura un proveïdor d'IA. Per a Ollama, no cal clau API.",
+        "data": {
+          "provider_type": "Tipus de proveïdor",
+          "name": "Nom del proveïdor",
+          "api_key": "Clau API",
+          "base_url": "URL base",
+          "model": "Model",
+          "max_tokens": "Màx. tokens",
+          "temperature": "Temperatura"
         }
       }
+    },
+    "error": {
+      "provider_name_required": "El nom del proveïdor és obligatori",
+      "provider_model_required": "El nom del model és obligatori",
+      "provider_url_required": "La URL base és obligatòria",
+      "provider_key_required": "La clau API és obligatòria per a aquest tipus de proveïdor"
     }
   },
   "entity": {
@@ -74,6 +103,74 @@
         "repository": {
           "name": "Repositori",
           "description": "Nom complet del repositori (ex. 'home-assistant/core')"
+        }
+      }
+    },
+    "ai_analyze_package": {
+      "name": "Analitzar amb IA",
+      "description": "Utilitza un proveïdor d'IA per analitzar si un paquet HACS té problemes reals de compatibilitat.",
+      "fields": {
+        "repository": {
+          "name": "Repositori",
+          "description": "Nom complet del repositori (ex. 'owner/repo')"
+        },
+        "provider": {
+          "name": "Proveïdor IA",
+          "description": "Nom del proveïdor d'IA a utilitzar (opcional, usa el primer configurat)"
+        }
+      }
+    },
+    "ai_categorize_issue": {
+      "name": "Categoritzar incidència amb IA",
+      "description": "Utilitza IA per categoritzar una incidència específica de GitHub.",
+      "fields": {
+        "repository": {
+          "name": "Repositori",
+          "description": "Nom complet del repositori (ex. 'owner/repo')"
+        },
+        "issue_number": {
+          "name": "Número d'incidència",
+          "description": "Número de la incidència a GitHub"
+        },
+        "provider": {
+          "name": "Proveïdor IA",
+          "description": "Nom del proveïdor d'IA a utilitzar (opcional)"
+        }
+      }
+    },
+    "report_to_rules": {
+      "name": "Reportar a regles comunitàries",
+      "description": "Crea una incidència al repositori de regles comunitàries amb l'anàlisi d'IA.",
+      "fields": {
+        "repository": {
+          "name": "Repositori",
+          "description": "Nom complet del repositori del paquet afectat"
+        },
+        "issue_number": {
+          "name": "Número d'incidència",
+          "description": "Número de la incidència a GitHub que s'està reportant"
+        },
+        "category": {
+          "name": "Categoria",
+          "description": "Categorització realitzada per la IA"
+        },
+        "reasoning": {
+          "name": "Raonament",
+          "description": "Explicació de la IA sobre la categorització"
+        },
+        "action": {
+          "name": "Acció",
+          "description": "Tipus de report (add_false_positive o report_incompatibility)"
+        }
+      }
+    },
+    "ai_analyze_all": {
+      "name": "Analitzar tot amb IA",
+      "description": "Executa anàlisi amb IA sobre tots els paquets que no estiguin en estat compatible.",
+      "fields": {
+        "provider": {
+          "name": "Proveïdor IA",
+          "description": "Nom del proveïdor d'IA a utilitzar (opcional, usa el primer configurat)"
         }
       }
     }
