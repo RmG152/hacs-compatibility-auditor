@@ -12,6 +12,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .const import (
+    CONF_BATCH_SIZE,
     CONF_CACHE_HOURS,
     CONF_CHECK_INTERVAL,
     CONF_GITHUB_RETRIES,
@@ -21,6 +22,7 @@ from .const import (
     CONF_ISSUE_LABELS_PRIORITY,
     CONF_RULES_ENABLED,
     CONF_RULES_REPO,
+    DEFAULT_BATCH_SIZE,
     DEFAULT_CACHE_HOURS,
     DEFAULT_CHECK_INTERVAL,
     DEFAULT_GITHUB_RETRIES,
@@ -128,6 +130,10 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                             self.config_entry.options.get(CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED),
                         ),
                         CONF_RULES_REPO: rules_repo,
+                        CONF_BATCH_SIZE: user_input.get(
+                            CONF_BATCH_SIZE,
+                            self.config_entry.options.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE),
+                        ),
                     },
                 )
 
@@ -172,6 +178,10 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                     CONF_RULES_REPO,
                     default=current_options.get(CONF_RULES_REPO, DEFAULT_RULES_REPO),
                 ): str,
+                vol.Optional(
+                    CONF_BATCH_SIZE,
+                    default=current_options.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE),
+                ): vol.All(int, vol.Range(min=1, max=50)),
             }
         )
 

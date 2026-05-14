@@ -5,3 +5,15 @@ check_now:
     entity:
       domain: sensor
       integration: hacs_compatibility_auditor
+
+check_package:
+  name: Comprobar paquete
+  description: Comprueba la compatibilidad de un paquete HACS específico por su repositorio (formato owner/repo).
+  fields:
+    repository:
+      name: Repositorio
+      description: Nombre completo del repositorio (ej. "owner/repo")
+      required: true
+      example: "home-assistant/core"
+      selector:
+        text:

@@ -15,40 +15,69 @@ These signals are combined into a final status per package: `compatible`, `warni
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  Coordinator                            │
-│  (HacsCompatibilityCoordinator)                         │
-│                                                         │
-│  1. Read HA current version (from HA core)              │
-│  2. Read HA next version (from GitHub releases API)     │
-│  3. Enumerate installed HACS packages                   │
-│  4. For each package → CompatibilityChecker             │
-│  5. Aggregate summary statistics                        │
-└──────────────┬──────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                  Coordinator                                │
+│  (HacsCompatibilityCoordinator)                             │
+│                                                             │
+│  1. Load persistent cache from disk                         │
+│  2. Read HA current version (from HA core)                  │
+│  3. Read HA next version (from GitHub releases API)         │
+│  4. Enumerate installed HACS packages                       │
+│  5. Separate: cached vs pending packages                    │
+│  6. Return cached data immediately (fast setup)             │
+│  7. Start background batch scan for pending packages        │
+│  8. Aggregate summary statistics                            │
+└──────────────┬──────────────────────────────────────────────┘
                │
                ▼
-┌─────────────────────────────────────────────────────────┐
-│              CompatibilityChecker                       │
-│  (check_package)                                        │
-│                                                         │
-│  Step 1: Fetch manifest → extract HA version req.       │
-│  Step 2: Fetch releases → get latest stable version     │
-│  Step 3: Parse version requirement vs. HA versions      │
-│  Step 4: Fetch issues → score by priority               │
-│  Step 5: Scan release notes for breaking keywords       │
-│  Step 6: Combine all signals → final status             │
-└──────────────┬──────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│           Background Batch Scanner                           │
+│                                                             │
+│  For each batch of N packages (concurrent):                 │
+│    1. For each pkg → CompatibilityChecker.check_package()   │
+│    2. Collect results                                       │
+│    3. Update coordinator data (async_set_updated_data)      │
+│    4. Save to disk cache (CacheManager.async_save)          │
+│    5. Notify sensors                                        │
+│  Next batch...                                              │
+│  On CancelledError: save progress and exit                  │
+└──────────────┬──────────────────────────────────────────────┘
                │
                ▼
-┌─────────────────────────────────────────────────────────┐
-│                GitHubClient                              │
-│  (rate-limited, cached, retry-aware)                    │
-│                                                         │
-│  • get_manifest()     — hacs.json / manifest.json       │
-│  • get_releases()     — repo releases                   │
-│  • get_issues()       — label + keyword search          │
-│  • get_ha_releases()  — home-assistant/core releases    │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│              CompatibilityChecker                           │
+│  (check_package)                                            │
+│                                                             │
+│  Step 1: Fetch manifest → extract HA version req.           │
+│  Step 2: Fetch releases → get latest stable version         │
+│  Step 3: Parse version requirement vs. HA versions          │
+│  Step 4: Fetch issues → score by priority                   │
+│  Step 5: Scan release notes for breaking keywords           │
+│  Step 6: Combine all signals → final status                 │
+└──────────────┬──────────────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                GitHubClient                                  │
+│  (rate-limited, cached, retry-aware)                        │
+│                                                             │
+│  • get_manifest()     — hacs.json / manifest.json           │
+│  • get_releases()     — repo releases                       │
+│  • get_issues()       — label + keyword search              │
+│  • get_ha_releases()  — home-assistant/core releases        │
+└─────────────────────────────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                CacheManager (disk)                           │
+│                                                             │
+│  File: .storage/hacs_compatibility_auditor_cache.json        │
+│  • Load on startup — no internet needed                     │
+│  • Each entry: {result, cached_at, ha_version}              │
+│  • TTL configurable (default 12h)                           │
+│  • Invalidated if HA version changes                        │
+│  • Saved after each batch + on completion                   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -61,11 +90,14 @@ The `HacsCompatibilityCoordinator._async_update_data()` orchestrates the scan:
 
 | Step | Action | Source |
 |------|--------|--------|
+| 0 | **Load disk cache** | `.storage/hacs_compatibility_auditor_cache.json` — no internet needed |
 | 1 | Get current HA version | `homeassistant.const.__version__` |
 | 2 | Get next HA version | GitHub releases API for `home-assistant/core` (first non-prerelease tag) |
 | 3 | Enumerate installed packages | HACS internal data → `.storage` file → repositories directory (3 fallback approaches) |
-| 4 | Check each package | Delegates to `CompatibilityChecker.check_package()` |
-| 5 | Aggregate counts | Tallies `compatible`, `warning`, `incompatible`, `unknown` |
+| 4 | **Separate cached vs pending** | For each pkg: ignore? → whitelist? → blacklist? → cache valid? → else pending |
+| 5 | Return cached data immediately | Fast setup, no blocking |
+| 6 | **Background batch scan** | Process pending packages in concurrent batches of N (default 5) |
+| 7 | Aggregate counts | Tallies `compatible`, `warning`, `incompatible`, `unknown` |
 
 ### Phase 2 — Per-Package Check (`CompatibilityChecker.check_package`)
 
@@ -199,10 +231,43 @@ ELSE:
 
 ## Caching and Rate Limiting
 
-- All GitHub API responses are cached for **12 hours** (configurable via `cache_hours` option).
-- The client tracks `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers.
-- When remaining calls drop to ≤ 5, the client waits until the reset time (up to 60 seconds).
+The integration uses a **two-layer cache**:
+
+### Layer 1 — In-Memory Cache (GitHubClient)
+
+- Stores raw API responses keyed by URL.
+- TTL: 12 hours (configurable via `cache_hours` option).
+- Cleared on forced refresh (`check_now` service).
+- `X-RateLimit-Remaining` and `X-RateLimit-Reset` headers are tracked globally.
+- When remaining calls ≤ 5, the client waits until the reset time (up to 60 seconds).
 - Failed requests are retried up to **3 times** with exponential backoff (`2^attempt` seconds).
+
+### Layer 2 — Persistent Disk Cache (CacheManager)
+
+- File: `.storage/hacs_compatibility_auditor_cache.json` in the HA config directory.
+- Stores individual package compatibility results keyed by `package_full_name`.
+- Each entry includes:
+  - `result` — the full `CompatibilityResult` dict.
+  - `cached_at` — Unix timestamp of when it was cached.
+  - `ha_version` — the HA version at cache time.
+- **Survives HA restarts.** On restart, the cache is loaded first — no internet required.
+- **TTL:** Same as the GitHub cache (configurable, default 12h).
+- **Version invalidation:** If the HA version changes, all entries are invalidated.
+- **Batch saving:** Cache is written to disk after each batch completes, not at the end — so progress is never lost.
+
+### Startup Flow
+
+1. Load disk cache → instant, no API calls.
+2. Enumerate HACS packages → local file access, fast.
+3. For each package: check ignore list → whitelist → blacklist → disk cache.
+4. Valid cache entry → use immediately (no API call).
+5. Miss/expired → add to pending list.
+6. If pending list is not empty:
+   - If there are cached results, return them immediately and start background batch scan.
+   - If no cached results at all, process the first batch synchronously, then start background.
+7. Background processes remaining packages in batches of N (configurable, default 5).
+8. After each batch: save disk cache → notify sensors via `async_set_updated_data()`.
+9. If cancelled (`asyncio.CancelledError`), progress is saved to disk before exit.
 
 ---
 
@@ -253,9 +318,10 @@ HACS Packages ────┤  (from HACS storage)
 
 | File | Role |
 |------|------|
-| `coordinator.py` | Orchestrates periodic scans, aggregates results |
+| `coordinator.py` | Orchestrates periodic scans, batch processing, disk cache, aggregates results |
+| `cache_manager.py` | Persistent disk cache (survives restarts, TTL + HA version invalidation) |
 | `compatibility.py` | Core algorithm: version parsing, issue scoring, status determination |
-| `github_client.py` | GitHub API client with caching, rate limiting, retries |
+| `github_client.py` | GitHub API client with URL-encoded queries, in-memory caching, rate limiting, retries |
 | `hacs_repository.py` | Reads installed HACS packages from multiple sources |
 | `const.py` | Default labels, keywords, status constants |
-| `sensor.py` | Exposes results as HA sensor entities (global + per-package) |
+| `sensor.py` | Exposes results as HA sensor entities (global + per-package) with scan progress attributes |

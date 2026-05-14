@@ -131,6 +131,11 @@ class HacsCompatibilityGlobalSensor(CoordinatorEntity, SensorEntity):
             attrs["rules_enabled"] = data.get("rules_enabled", False)
             attrs["rules_loaded"] = data.get("rules_loaded", False)
 
+        # Add scan progress info (especially useful during initial batch scan)
+        attrs["scan_in_progress"] = data.get("scan_in_progress", False)
+        attrs["scan_progress"] = data.get("scan_progress", 0)
+        attrs["scan_total"] = data.get("scan_total", 0)
+
         return attrs
 
     @property

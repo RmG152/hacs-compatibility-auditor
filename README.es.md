@@ -12,6 +12,9 @@ Integración de Home Assistant que detecta la versión actual y la próxima vers
 - **Análisis de issues en GitHub**: Revisa issues abiertos y recientes para detectar reportes de incompatibilidad, notas de breaking changes y PRs relevantes.
 - **Notificaciones**: Eventos automáticos cuando se detectan incompatibilidades con la próxima versión de HA.
 - **Servicio de re-escaneo**: Fuerza una comprobación inmediata con el servicio `hacs_compatibility_auditor.check_now`.
+- **Comprobación por paquete**: Comprueba un paquete HACS específico con `hacs_compatibility_auditor.check_package` sin esperar un escaneo completo.
+- **Caché persistente**: Los resultados sobreviven reinicios de HA. Al reiniciar, los datos cacheados se cargan del disco al instante y solo las entradas expiradas se vuelven a consultar.
+- **Procesamiento por lotes**: Los paquetes se comprueban en lotes concurrentes (por defecto 5), evitando timeouts en instalaciones grandes. El progreso se guarda tras cada lote.
 - **Motor de reglas comunitarias**: Descarga reglas de la comunidad desde un repositorio de GitHub para whitelist, blacklist o ajustar la detección de compatibilidad por paquete. → [Repositorio de reglas](https://github.com/RmG152/hacs-compatibility-auditor-rules)
 - **Lovelace Card**: Incluye una tarjeta personalizada con resumen filtrable, enlaces a repositorios y acciones rápidas. → [Repositorio de la card](https://github.com/RmG152/hacs-compatibility-auditor-card)
 
@@ -74,6 +77,7 @@ Accede a las opciones desde Configuración → Integraciones → HACS Compatibil
 - **Labels de prioridad**: Labels de GitHub que indican alta severidad (separadas por coma). Por defecto: `breaking-change,breaking,incompatible,upgrade,compatibility`.
 - **Lista de ignorados**: Nombres de repositorios a ignorar (separados por coma).
 - **Repositorio de reglas**: Repositorio de GitHub para reglas comunitarias (por defecto: `RmG152/hacs-compatibility-auditor-rules`).
+- **Tamaño de lote**: Número de paquetes a comprobar concurrentemente (por defecto: 5, máximo: 50). Lotes más grandes aceleran el escaneo pero consumen más cuota de la API de GitHub simultáneamente.
 
 ### Token de GitHub
 
@@ -81,7 +85,9 @@ Accede a las opciones desde Configuración → Integraciones → HACS Compatibil
 2. Crea un nuevo token (classic) con permisos mínimos: `public_repo` (solo lectura).
 3. Copia el token y pégalo en la configuración de la integración.
 
-## Servicio
+> Para el esquema completo de la API de servicios, incluyendo formatos de respuesta y ejemplos de uso desde el frontal, consulta [docs/services.md](docs/services.md).
+
+## Servicios
 
 ### `hacs_compatibility_auditor.check_now`
 
@@ -90,6 +96,36 @@ Fuerza una re-comprobación inmediata de la compatibilidad de todos los paquetes
 ```yaml
 service: hacs_compatibility_auditor.check_now
 ```
+
+### `hacs_compatibility_auditor.check_package`
+
+Comprueba la compatibilidad de un paquete HACS específico por nombre de repositorio, sin esperar un escaneo completo.
+
+```yaml
+service: hacs_compatibility_auditor.check_package
+data:
+  repository: "owner/repo-name"
+```
+
+Devuelve el resultado de compatibilidad para ese paquete.
+
+## Caché
+
+La integración utiliza una **caché de dos niveles** para minimizar las llamadas a la API de GitHub y sobrevivir a reinicios:
+
+1. **Caché en memoria** (GitHubClient): Almacena respuestas crudas de la API durante el TTL configurado (por defecto 12h). Se limpia en una comprobación forzada.
+2. **Caché persistente en disco** (CacheManager): Almacena resultados individuales de compatibilidad en `.storage/hacs_compatibility_auditor_cache.json`. Sobrevive a reinicios de HA.
+
+**Al reiniciar:**
+1. La caché de disco se carga primero — no se necesita acceso a internet.
+2. Para cada paquete, si el resultado en caché sigue siendo válido (TTL no expirado Y versión de HA sin cambios), se usa directamente.
+3. Solo los paquetes con caché expirada, ausente o invalidada se consultan desde GitHub.
+4. Los paquetes se comprueban en lotes (por defecto 5 concurrentes) y la caché de disco se actualiza tras cada lote.
+
+**Invalidación de caché:**
+- El TTL se configura mediante la opción `cache_hours` (por defecto: 12h).
+- Si la versión de Home Assistant cambia, todas las entradas en caché se invalidan (los resultados pueden diferir por versión de HA).
+- Llamar a `check_now` limpia ambas capas de caché y fuerza una actualización completa.
 
 ## Reglas Comunitarias
 
