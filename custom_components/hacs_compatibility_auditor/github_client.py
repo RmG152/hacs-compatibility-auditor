@@ -470,6 +470,58 @@ class GitHubClient:
         _LOGGER.debug("Found %d HA core releases", len(releases))
         return releases
 
+    async def create_issue(
+        self,
+        owner: str,
+        repo: str,
+        title: str,
+        body: str = "",
+        labels: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Create an issue on a GitHub repository.
+
+        Requires a valid GitHub token with repo or public_repo scope.
+        Returns the created issue data on success, None on failure.
+        """
+        if not self._token:
+            _LOGGER.error("Cannot create issue: no GitHub token configured")
+            return None
+
+        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues"
+        payload: dict[str, Any] = {"title": title}
+        if body:
+            payload["body"] = body
+        if labels:
+            payload["labels"] = labels
+
+        _LOGGER.debug("Creating issue on %s/%s: %s", owner, repo, title)
+
+        try:
+            async with self._session.post(
+                url,
+                json=payload,
+                headers=self._get_headers(),
+                timeout=self._timeout,
+            ) as resp:
+                if resp.status == 201:
+                    data = await resp.json()
+                    _LOGGER.info("Created issue #%d on %s/%s", data.get("number"), owner, repo)
+                    return data
+
+                error_text = await resp.text()
+                _LOGGER.error(
+                    "Failed to create issue on %s/%s: HTTP %d - %s",
+                    owner,
+                    repo,
+                    resp.status,
+                    error_text[:300],
+                )
+                return None
+
+        except (aiohttp.ClientError, TimeoutError, json.JSONDecodeError) as exc:
+            _LOGGER.error("Error creating issue on %s/%s: %s", owner, repo, exc)
+            return None
+
     def _calculate_issue_priority(self, issue_labels: list[str], matched_label: str) -> int:
         """Calculate priority score for a label-matched issue."""
         score = 5  # Base score for label match

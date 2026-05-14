@@ -131,6 +131,146 @@ Each entry in `issues_relevant`:
 
 ---
 
+---
+
+## `hacs_compatibility_auditor.ai_analyze_package`
+
+Uses an AI provider to analyze if a HACS package has real compatibility issues. Runs the full compatibility check and then sends the context (issues, manifest, versions) to the configured AI for analysis.
+
+### Request
+
+```yaml
+service: hacs_compatibility_auditor.ai_analyze_package
+data:
+  repository: "owner/repo-name"
+  # provider: "My OpenAI"  # optional, uses first configured if omitted
+```
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repository` | `string` | **Yes** | Full repository name in `owner/repo` format |
+| `provider` | `string` | No | Name of the AI provider to use (uses first configured if omitted) |
+
+### Response
+
+```json
+{
+  "success": true,
+  "result": {
+    "verdict": "not_affected",
+    "reasoning": "The issues found are related to user configuration, not HA compatibility.",
+    "confidence": 0.87,
+    "provider_used": "My OpenAI",
+    "raw_response": "...",
+    "error": ""
+  },
+  "algorithm_status": "warning"
+}
+```
+
+### Result Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `verdict` | `string` | `affected`, `not_affected`, or `uncertain` |
+| `reasoning` | `string` | AI explanation for the verdict |
+| `confidence` | `float` | AI confidence score (0.0 - 1.0) |
+| `provider_used` | `string` | Name of the AI provider that processed the request |
+| `raw_response` | `string` | Raw AI response (truncated) |
+| `error` | `string` | Error message if the AI request failed |
+
+---
+
+## `hacs_compatibility_auditor.ai_categorize_issue`
+
+Categorizes a specific GitHub issue using AI to determine if it's a real compatibility problem.
+
+### Request
+
+```yaml
+service: hacs_compatibility_auditor.ai_categorize_issue
+data:
+  repository: "owner/repo-name"
+  issue_number: 42
+  # provider: "My OpenAI"  # optional
+```
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repository` | `string` | **Yes** | Full repository name in `owner/repo` format |
+| `issue_number` | `integer` | **Yes** | GitHub issue number |
+| `provider` | `string` | No | Name of the AI provider to use |
+
+### Response
+
+```json
+{
+  "success": true,
+  "result": {
+    "category": "false_positive",
+    "confidence": 0.92,
+    "reasoning": "The issue is about a configuration error, not a compatibility problem.",
+    "provider_used": "My OpenAI",
+    "error": ""
+  }
+}
+```
+
+### Categories
+
+| Category | Meaning |
+|----------|---------|
+| `true_positive` | Actually affects compatibility |
+| `false_positive` | Does not affect compatibility |
+| `config_issue` | User configuration problem |
+| `feature_request` | Feature request, not a bug |
+| `unrelated` | Not related to compatibility |
+| `uncertain` | Cannot be determined |
+
+---
+
+## `hacs_compatibility_auditor.report_to_rules`
+
+Creates a GitHub issue on the community rules repository ([RmG152/hacs-compatibility-auditor-rules](https://github.com/RmG152/hacs-compatibility-auditor-rules)) with the AI analysis results. Requires a valid GitHub token with `public_repo` scope.
+
+### Request
+
+```yaml
+service: hacs_compatibility_auditor.report_to_rules
+data:
+  repository: "owner/repo-name"
+  issue_number: 42
+  category: "false_positive"
+  reasoning: "The AI determined this issue is a user configuration problem"
+  action: "add_false_positive"
+```
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repository` | `string` | **Yes** | Full repository name of the affected package |
+| `issue_number` | `integer` | **Yes** | GitHub issue number being reported |
+| `category` | `string` | **Yes** | AI categorization result (one of the categories above) |
+| `reasoning` | `string` | **Yes** | AI reasoning for the categorization |
+| `action` | `string` | **Yes** | `add_false_positive` or `report_incompatibility` |
+
+### Response
+
+```json
+{
+  "success": true,
+  "issue_url": "https://github.com/RmG152/hacs-compatibility-auditor-rules/issues/1",
+  "issue_number": 1
+}
+```
+
+---
+
 ## Service Call from Frontend (JavaScript/TypeScript)
 
 ### Calling `check_now`

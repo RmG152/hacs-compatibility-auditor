@@ -9,7 +9,7 @@ import logging
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, UnknownEntry
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import (
     HomeAssistant,
@@ -19,7 +19,15 @@ from homeassistant.core import (
 )
 from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN, PLATFORMS, SERVICE_CHECK_NOW, SERVICE_CHECK_PACKAGE
+from .const import (
+    DOMAIN,
+    PLATFORMS,
+    SERVICE_AI_ANALYZE_PACKAGE,
+    SERVICE_AI_CATEGORIZE_ISSUE,
+    SERVICE_CHECK_NOW,
+    SERVICE_CHECK_PACKAGE,
+    SERVICE_REPORT_TO_RULES,
+)
 from .coordinator import HacsCompatibilityCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +43,31 @@ SERVICE_CHECK_NOW_SCHEMA = vol.Schema(
 SERVICE_CHECK_PACKAGE_SCHEMA = vol.Schema(
     {
         vol.Required("repository"): cv.string,
+    }
+)
+
+SERVICE_AI_ANALYZE_PACKAGE_SCHEMA = vol.Schema(
+    {
+        vol.Required("repository"): cv.string,
+        vol.Optional("provider"): cv.string,
+    }
+)
+
+SERVICE_AI_CATEGORIZE_ISSUE_SCHEMA = vol.Schema(
+    {
+        vol.Required("repository"): cv.string,
+        vol.Required("issue_number"): vol.All(int, vol.Range(min=1)),
+        vol.Optional("provider"): cv.string,
+    }
+)
+
+SERVICE_REPORT_TO_RULES_SCHEMA = vol.Schema(
+    {
+        vol.Required("repository"): cv.string,
+        vol.Required("issue_number"): vol.All(int, vol.Range(min=1)),
+        vol.Required("category"): cv.string,
+        vol.Required("reasoning"): cv.string,
+        vol.Required("action"): cv.string,
     }
 )
 
@@ -90,6 +123,73 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.OPTIONAL,
     )
 
+    # Register AI services
+    async def async_ai_analyze_package(call: ServiceCall) -> ServiceResponse:
+        """Handle the ai_analyze_package service call."""
+        repository = call.data.get("repository", "")
+        provider = call.data.get("provider")
+        if not repository:
+            return {"success": False, "error": "repository parameter is required"}
+        _LOGGER.info("AI analyzing package: %s", repository)
+        return await coordinator.async_analyze_package(repository, provider)
+
+    async def async_ai_categorize_issue(call: ServiceCall) -> ServiceResponse:
+        """Handle the ai_categorize_issue service call."""
+        repository = call.data.get("repository", "")
+        issue_number = call.data.get("issue_number")
+        provider = call.data.get("provider")
+        if not repository or issue_number is None:
+            return {
+                "success": False,
+                "error": "repository and issue_number parameters are required",
+            }
+        _LOGGER.info("AI categorizing issue #%d for %s", issue_number, repository)
+        return await coordinator.async_categorize_issue(repository, issue_number, provider)
+
+    async def async_report_to_rules(call: ServiceCall) -> ServiceResponse:
+        """Handle the report_to_rules service call."""
+        repository = call.data.get("repository", "")
+        issue_number = call.data.get("issue_number")
+        category = call.data.get("category", "")
+        reasoning = call.data.get("reasoning", "")
+        action = call.data.get("action", "")
+        if not all([repository, issue_number, category, reasoning, action]):
+            return {
+                "success": False,
+                "error": "repository, issue_number, category, reasoning, and action are required",
+            }
+        _LOGGER.info(
+            "Reporting issue #%d for %s to rules repo (%s)",
+            issue_number,
+            repository,
+            action,
+        )
+        return await coordinator.async_report_to_rules(repository, issue_number, category, reasoning, action)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_AI_ANALYZE_PACKAGE,
+        async_ai_analyze_package,
+        schema=SERVICE_AI_ANALYZE_PACKAGE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_AI_CATEGORIZE_ISSUE,
+        async_ai_categorize_issue,
+        schema=SERVICE_AI_CATEGORIZE_ISSUE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REPORT_TO_RULES,
+        async_report_to_rules,
+        schema=SERVICE_REPORT_TO_RULES_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
     # Register options update listener
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -115,7 +215,10 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     _LOGGER.info("HACS Compatibility Auditor options updated")
     coordinator: HacsCompatibilityCoordinator = hass.data[DOMAIN][entry.entry_id]
     coordinator.update_config_from_entry()
-    hass.config_entries.async_schedule_reload(entry)
+    try:
+        hass.config_entries.async_schedule_reload(entry)
+    except UnknownEntry:
+        _LOGGER.warning("Entry %s not found for reload (transient state)", entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -123,7 +226,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info("Unloading HACS Compatibility Auditor")
 
     # Remove services
-    for service in [SERVICE_CHECK_NOW, SERVICE_CHECK_PACKAGE]:
+    for service in [
+        SERVICE_CHECK_NOW,
+        SERVICE_CHECK_PACKAGE,
+        SERVICE_AI_ANALYZE_PACKAGE,
+        SERVICE_AI_CATEGORIZE_ISSUE,
+        SERVICE_REPORT_TO_RULES,
+    ]:
         hass.services.async_remove(DOMAIN, service)
 
     # Unload platforms

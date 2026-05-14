@@ -47,6 +47,7 @@ class CompatibilityResult:
     error: str = ""
     reason: str = ""
     data: dict[str, Any] = field(default_factory=dict)
+    ai_analysis: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for sensor attributes."""
@@ -64,6 +65,7 @@ class CompatibilityResult:
             "last_checked": self.last_checked,
             "error": self.error,
             "reason": self.reason,
+            "ai_analysis": self.ai_analysis,
         }
 
 
