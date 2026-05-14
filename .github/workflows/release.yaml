@@ -37,8 +37,9 @@ jobs:
 
       - name: Create release zip
         run: |
-          zip -r hacs-compatibility-auditor.zip \
-            custom_components/hacs_compatibility_auditor/ \
+          cd custom_components
+          zip -r ../hacs-compatibility-auditor.zip \
+            hacs_compatibility_auditor/ \
             -x "*/__pycache__/*" "*.pyc" ".DS_Store"
 
       - name: Create GitHub Release
