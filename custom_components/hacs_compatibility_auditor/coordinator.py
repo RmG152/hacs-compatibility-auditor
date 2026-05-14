@@ -47,6 +47,9 @@ from .rules_client import RulesClient
 
 _LOGGER = logging.getLogger(__name__)
 
+# Minimum interval between automatic scans (seconds)
+_UPDATE_MIN_INTERVAL = 300
+
 
 class HacsCompatibilityData:
     """Container for all compatibility audit data."""
@@ -101,29 +104,21 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         self._rules_client: RulesClient | None = None
         self._hacs_reader = HacsRepositoryReader(hass)
         self._scan_lock = asyncio.Lock()
+        self._last_scan_ts: dt | None = None
+        self._force_refresh: bool = False
 
         # Read config
         entry_data = config_entry.data
         entry_options = config_entry.options
 
         self._github_token = entry_data.get(CONF_GITHUB_TOKEN, "")
-        self._check_interval = entry_options.get(
-            CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
-        )
+        self._check_interval = entry_options.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL)
         self._cache_hours = entry_options.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS)
-        self._github_timeout = entry_options.get(
-            CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT
-        )
-        self._github_retries = entry_options.get(
-            CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES
-        )
-        self._issue_labels_priority = entry_options.get(
-            CONF_ISSUE_LABELS_PRIORITY, DEFAULT_ISSUE_LABELS_PRIORITY
-        )
+        self._github_timeout = entry_options.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT)
+        self._github_retries = entry_options.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES)
+        self._issue_labels_priority = entry_options.get(CONF_ISSUE_LABELS_PRIORITY, DEFAULT_ISSUE_LABELS_PRIORITY)
         self._ignore_list = entry_options.get(CONF_IGNORE_LIST, [])
-        self._rules_enabled = entry_options.get(
-            CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED
-        )
+        self._rules_enabled = entry_options.get(CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED)
         self._rules_repo = entry_options.get(CONF_RULES_REPO, DEFAULT_RULES_REPO)
 
         super().__init__(
@@ -183,15 +178,22 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from all sources."""
-
-        # Use a lock to prevent concurrent scans
-        if self._scan_lock.locked():
-            _LOGGER.debug("Scan already in progress, waiting for it to complete")
-            async with self._scan_lock:
-                return self._data.to_dict()
+        """Fetch data from all sources with rate limiting."""
 
         async with self._scan_lock:
+            # Rate limiting: skip if scanned too recently (unless forced)
+            if not self._force_refresh and self._last_scan_ts is not None:
+                elapsed = (dt.now(UTC) - self._last_scan_ts).total_seconds()
+                if elapsed < _UPDATE_MIN_INTERVAL:
+                    _LOGGER.debug(
+                        "Scan skipped: only %.0fs since last scan (min %.0fs)",
+                        elapsed,
+                        _UPDATE_MIN_INTERVAL,
+                    )
+                    return self._data.to_dict()
+
+            self._force_refresh = False
+            self._last_scan_ts = dt.now(UTC)
             return await self._async_update_data_impl()
 
     async def _async_update_data_impl(self) -> dict[str, Any]:
@@ -263,18 +265,10 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
             # Step 4: Compute summary stats
             _LOGGER.debug("Step 4/4: Computing summary statistics")
-            self._data.incompatible_count = sum(
-                1 for r in self._data.results if r.status == STATUS_INCOMPATIBLE
-            )
-            self._data.warning_count = sum(
-                1 for r in self._data.results if r.status == STATUS_WARNING
-            )
-            self._data.compatible_count = sum(
-                1 for r in self._data.results if r.status == STATUS_COMPATIBLE
-            )
-            self._data.unknown_count = sum(
-                1 for r in self._data.results if r.status == STATUS_UNKNOWN
-            )
+            self._data.incompatible_count = sum(1 for r in self._data.results if r.status == STATUS_INCOMPATIBLE)
+            self._data.warning_count = sum(1 for r in self._data.results if r.status == STATUS_WARNING)
+            self._data.compatible_count = sum(1 for r in self._data.results if r.status == STATUS_COMPATIBLE)
+            self._data.unknown_count = sum(1 for r in self._data.results if r.status == STATUS_UNKNOWN)
 
             self._data.last_scan = dt.now(UTC).isoformat()
 
@@ -293,12 +287,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             raise
         except Exception as exc:
             elapsed = (dt.now(UTC) - scan_start).total_seconds()
-            _LOGGER.error(
-                "Error updating HACS compatibility data after %.1fs: %s", elapsed, exc
-            )
-            raise UpdateFailed(
-                f"Error updating HACS compatibility data: {exc}"
-            ) from exc
+            _LOGGER.error("Error updating HACS compatibility data after %.1fs: %s", elapsed, exc)
+            raise UpdateFailed(f"Error updating HACS compatibility data: {exc}") from exc
 
     async def _update_ha_versions(self) -> None:
         """Update HA current and next versions."""
@@ -315,9 +305,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
                 current_ver = self._parse_simple_version(ha_version)
                 if current_ver is None:
-                    _LOGGER.warning(
-                        "Could not parse current HA version: %s", ha_version
-                    )
+                    _LOGGER.warning("Could not parse current HA version: %s", ha_version)
                     return
 
                 for release in releases:
@@ -352,15 +340,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                             break  # First stable release > current is the "next" version
 
                 if self._data.ha_next is None:
-                    _LOGGER.debug(
-                        "No newer HA version found beyond current %s", ha_version
-                    )
+                    _LOGGER.debug("No newer HA version found beyond current %s", ha_version)
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 _LOGGER.warning("Could not determine next HA version: %s", exc)
         else:
-            _LOGGER.warning(
-                "GitHub client not available, cannot determine next HA version"
-            )
+            _LOGGER.warning("GitHub client not available, cannot determine next HA version")
 
     @staticmethod
     def _parse_simple_version(version_str: str) -> Any | None:
@@ -375,7 +359,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             if not cleaned:
                 return None
             return parse_version(cleaned)
-        except InvalidVersion, ValueError:
+        except (InvalidVersion, ValueError):
             return None
 
     @property
@@ -384,8 +368,9 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         return self._data
 
     async def async_force_check(self) -> None:
-        """Force an immediate re-check."""
+        """Force an immediate re-check, bypassing rate limit."""
         _LOGGER.info("Forcing HACS compatibility re-check")
+        self._force_refresh = True
         # Clear cache to force fresh data
         if self._github_client:
             _LOGGER.debug("Clearing GitHub client cache")
@@ -400,18 +385,12 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         old_rules_enabled = self._rules_enabled
         old_rules_repo = self._rules_repo
 
-        self._check_interval = entry_options.get(
-            CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
-        )
+        self._check_interval = entry_options.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL)
         self._cache_hours = entry_options.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS)
-        self._issue_labels_priority = entry_options.get(
-            CONF_ISSUE_LABELS_PRIORITY, DEFAULT_ISSUE_LABELS_PRIORITY
-        )
+        self._issue_labels_priority = entry_options.get(CONF_ISSUE_LABELS_PRIORITY, DEFAULT_ISSUE_LABELS_PRIORITY)
         self._ignore_list = entry_options.get(CONF_IGNORE_LIST, [])
         self._github_token = entry_data.get(CONF_GITHUB_TOKEN, "")
-        self._rules_enabled = entry_options.get(
-            CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED
-        )
+        self._rules_enabled = entry_options.get(CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED)
         self._rules_repo = entry_options.get(CONF_RULES_REPO, DEFAULT_RULES_REPO)
 
         # Update interval
@@ -422,10 +401,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             self._github_client.update_cache_ttl(self._cache_hours * 3600)
 
         # Reinitialize rules client if settings changed
-        if (
-            old_rules_enabled != self._rules_enabled
-            or old_rules_repo != self._rules_repo
-        ):
+        if old_rules_enabled != self._rules_enabled or old_rules_repo != self._rules_repo:
             if self._rules_enabled:
                 self._rules_client = RulesClient(
                     session=async_create_clientsession(self.hass),

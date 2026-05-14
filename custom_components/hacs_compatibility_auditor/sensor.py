@@ -232,9 +232,6 @@ async def async_setup_entry(
     """Set up HACS Compatibility Auditor sensors from a config entry."""
     coordinator: HacsCompatibilityCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # Wait for first data refresh
-    await coordinator.async_config_entry_first_refresh()
-
     entities: list[SensorEntity] = []
 
     # Add global sensors
