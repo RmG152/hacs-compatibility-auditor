@@ -25,6 +25,7 @@ from .const import (
     SERVICE_AI_ANALYZE_ALL,
     SERVICE_AI_ANALYZE_PACKAGE,
     SERVICE_AI_CATEGORIZE_ISSUE,
+    SERVICE_AI_CONFIRM_REPORT,
     SERVICE_CHECK_NOW,
     SERVICE_CHECK_PACKAGE,
     SERVICE_REPORT_TO_RULES,
@@ -75,6 +76,13 @@ SERVICE_REPORT_TO_RULES_SCHEMA = vol.Schema(
 SERVICE_AI_ANALYZE_ALL_SCHEMA = vol.Schema(
     {
         vol.Optional("provider"): cv.string,
+    }
+)
+
+SERVICE_AI_CONFIRM_REPORT_SCHEMA = vol.Schema(
+    {
+        vol.Required("repository"): cv.string,
+        vol.Optional("action"): cv.string,
     }
 )
 
@@ -179,6 +187,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("AI analyzing all non-compatible packages")
         return await coordinator.async_analyze_all(provider)
 
+    async def async_ai_confirm_report(call: ServiceCall) -> ServiceResponse:
+        """Handle the ai_confirm_report service call."""
+        repository = call.data.get("repository", "")
+        action = call.data.get("action")
+        if not repository:
+            return {"success": False, "error": "repository parameter is required"}
+        _LOGGER.info("Confirming AI report for %s", repository)
+        return await coordinator.async_confirm_report(repository, action)
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_AI_ANALYZE_PACKAGE,
@@ -208,6 +225,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         SERVICE_AI_ANALYZE_ALL,
         async_ai_analyze_all,
         schema=SERVICE_AI_ANALYZE_ALL_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_AI_CONFIRM_REPORT,
+        async_ai_confirm_report,
+        schema=SERVICE_AI_CONFIRM_REPORT_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
 
@@ -253,6 +278,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         SERVICE_AI_ANALYZE_ALL,
         SERVICE_AI_ANALYZE_PACKAGE,
         SERVICE_AI_CATEGORIZE_ISSUE,
+        SERVICE_AI_CONFIRM_REPORT,
         SERVICE_REPORT_TO_RULES,
     ]:
         hass.services.async_remove(DOMAIN, service)

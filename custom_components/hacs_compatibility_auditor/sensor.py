@@ -199,6 +199,7 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed package attributes."""
         data = self._package_data
+        ai = data.get("ai_analysis", {}) or {}
         return {
             "name": data.get("name", ""),
             "repository": data.get("repository", ""),
@@ -213,6 +214,11 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
             "error": data.get("error", ""),
             "reason": data.get("reason", ""),
             "repository_url": f"https://github.com/{self._package_full_name}",
+            "ai_verdict": ai.get("verdict"),
+            "ai_confidence": ai.get("confidence"),
+            "ai_reasoning": ai.get("reasoning", ""),
+            "ai_provider": ai.get("provider_used", ""),
+            "ai_analysis": ai,
         }
 
     @property

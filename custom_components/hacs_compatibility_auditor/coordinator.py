@@ -938,6 +938,71 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             "error_details": errors,
         }
 
+    async def async_confirm_report(
+        self,
+        repository: str,
+        action: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a rules repo issue from stored AI analysis for a package."""
+        if not self._github_client:
+            return {"success": False, "error": "GitHub client not initialized"}
+        if not self._github_token:
+            return {"success": False, "error": "GitHub token required to create issues"}
+
+        # Find stored result with AI analysis
+        result_dict = None
+        for r in self._data.results:
+            if r.get("repository") == repository:
+                result_dict = r
+                break
+
+        if not result_dict:
+            return {"success": False, "error": f"Package {repository} not found in results"}
+
+        ai = result_dict.get("ai_analysis", {}) or {}
+        if not ai or ai.get("error"):
+            return {"success": False, "error": f"No AI analysis available for {repository}"}
+
+        verdict = ai.get("verdict", "uncertain")
+        reasoning = ai.get("reasoning", "No reasoning provided")
+        confidence = ai.get("confidence", 0)
+        provider = ai.get("provider_used", "unknown")
+
+        resolved_action = action
+        if not resolved_action:
+            resolved_action = "add_false_positive" if verdict == "not_affected" else "report_incompatibility"
+
+        title = f"[AI Confirmed] {repository} - {verdict} ({confidence:.0%})"
+        body = (
+            f"## AI Confirmed Report\n\n"
+            f"- **Package**: `{repository}`\n"
+            f"- **Verdict**: `{verdict}`\n"
+            f"- **Confidence**: {confidence:.0%}\n"
+            f"- **AI Provider**: {provider}\n"
+            f"- **Action**: `{resolved_action}`\n\n"
+            f"### AI Reasoning\n\n{reasoning}\n\n"
+            f"### Algorithm Status\n\n{result_dict.get('reason', 'N/A')}\n\n"
+            f"---\n*Confirmed via HACS Compatibility Auditor*"
+        )
+
+        labels = [f"ai-{verdict}", "ai-confirmed"]
+        rules_repo = self._rules_repo
+        if "/" not in rules_repo:
+            return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
+
+        owner, repo = rules_repo.split("/", 1)
+        issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
+
+        if issue_data:
+            return {
+                "success": True,
+                "issue_url": issue_data.get("html_url", ""),
+                "issue_number": issue_data.get("number", 0),
+                "verdict": verdict,
+                "action": resolved_action,
+            }
+        return {"success": False, "error": "Failed to create issue on rules repository"}
+
     async def async_check_single_package(self, repository: str) -> dict[str, Any] | None:
         """Check compatibility for a single package by repository name."""
         if not self._checker or not self._github_client:

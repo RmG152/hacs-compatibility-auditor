@@ -164,13 +164,17 @@
         }
       }
     },
-    "ai_analyze_all": {
-      "name": "Analitzar tot amb IA",
-      "description": "Executa anàlisi amb IA sobre tots els paquets que no estiguin en estat compatible.",
+    "ai_confirm_report": {
+      "name": "Confirmar i reportar amb IA",
+      "description": "Crea una incidència al repositori de regles usant l'anàlisi d'IA emmagatzemada per a un paquet.",
       "fields": {
-        "provider": {
-          "name": "Proveïdor IA",
-          "description": "Nom del proveïdor d'IA a utilitzar (opcional, usa el primer configurat)"
+        "repository": {
+          "name": "Repositori",
+          "description": "Nom complet del repositori (ex. 'owner/repo')"
+        },
+        "action": {
+          "name": "Acció",
+          "description": "Acció a prendre (opcional, es deriva del veredicte: not_affected->add_false_positive, affected->report_incompatibility)"
         }
       }
     }

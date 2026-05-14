@@ -144,6 +144,7 @@ AI_VERDICT_UNCERTAIN = "uncertain"
 SERVICE_AI_ANALYZE_PACKAGE = "ai_analyze_package"
 SERVICE_AI_CATEGORIZE_ISSUE = "ai_categorize_issue"
 SERVICE_AI_ANALYZE_ALL = "ai_analyze_all"
+SERVICE_AI_CONFIRM_REPORT = "ai_confirm_report"
 SERVICE_REPORT_TO_RULES = "report_to_rules"
 
 # Signals

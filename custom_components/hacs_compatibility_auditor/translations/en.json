@@ -164,13 +164,17 @@
         }
       }
     },
-    "ai_analyze_all": {
-      "name": "Analyze all with AI",
-      "description": "Runs AI analysis on all packages that are not in compatible status.",
+    "ai_confirm_report": {
+      "name": "Confirm and report with AI",
+      "description": "Creates a GitHub issue on the rules repository using stored AI analysis for a package.",
       "fields": {
-        "provider": {
-          "name": "AI Provider",
-          "description": "AI provider name to use (optional, uses the first configured provider)"
+        "repository": {
+          "name": "Repository",
+          "description": "Full repository name (e.g. 'owner/repo')"
+        },
+        "action": {
+          "name": "Action",
+          "description": "Action to take (optional, derived from verdict: not_affected->add_false_positive, affected->report_incompatibility)"
         }
       }
     }

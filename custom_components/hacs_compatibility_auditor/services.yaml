@@ -120,3 +120,25 @@ ai_analyze_all:
       example: "Mi OpenAI"
       selector:
         text:
+
+ai_confirm_report:
+  name: Confirmar y reportar con IA
+  description: Crea una incidencia en el repositorio de reglas usando el análisis de IA almacenado para un paquete.
+  fields:
+    repository:
+      name: Repositorio
+      description: Nombre completo del repositorio (ej. "owner/repo")
+      required: true
+      example: "home-assistant/core"
+      selector:
+        text:
+    action:
+      name: Acción
+      description: Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility)
+      required: false
+      example: "add_false_positive"
+      selector:
+        select:
+          options:
+            - "add_false_positive"
+            - "report_incompatibility"

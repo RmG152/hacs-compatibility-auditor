@@ -164,13 +164,17 @@
         }
       }
     },
-    "ai_analyze_all": {
-      "name": "Analizar todo con IA",
-      "description": "Ejecuta análisis con IA sobre todos los paquetes que no estén en estado compatible.",
+    "ai_confirm_report": {
+      "name": "Confirmar y reportar con IA",
+      "description": "Crea una incidencia en el repositorio de reglas usando el análisis de IA almacenado para un paquete.",
       "fields": {
-        "provider": {
-          "name": "Proveedor IA",
-          "description": "Nombre del proveedor de IA a utilizar (opcional, usa el primero configurado)"
+        "repository": {
+          "name": "Repositorio",
+          "description": "Nombre completo del repositorio (ej. 'owner/repo')"
+        },
+        "action": {
+          "name": "Acción",
+          "description": "Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility)"
         }
       }
     }
