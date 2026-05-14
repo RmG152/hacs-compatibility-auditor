@@ -343,7 +343,7 @@ class CompatibilityChecker:
 
         try:
             ha_ver = CompatibilityChecker._parse_ha_version(ha_version)
-        except InvalidVersion, ValueError:
+        except (InvalidVersion, ValueError):
             _LOGGER.warning("Cannot parse HA version: %s", ha_version)
             return True
 
@@ -385,7 +385,7 @@ class CompatibilityChecker:
 
         try:
             req_ver = CompatibilityChecker._parse_ha_version(req_str)
-        except InvalidVersion, ValueError:
+        except (InvalidVersion, ValueError):
             _LOGGER.warning("Cannot parse requirement version: %s", req_str)
             return True
 

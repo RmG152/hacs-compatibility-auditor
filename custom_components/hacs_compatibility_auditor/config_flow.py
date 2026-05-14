@@ -61,86 +61,6 @@ async def _validate_hacs(hass: HomeAssistant) -> bool:
         return False
 
 
-class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for HACS Compatibility Auditor."""
-
-    VERSION = 1
-    MINOR_VERSION = 1
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the initial step."""
-        errors: dict[str, str] = {}
-
-        if self._async_current_entries():
-            return self.async_abort(reason="already_configured")
-
-        if user_input is not None:
-            # Validate HACS presence
-            if not await _validate_hacs(self.hass):
-                errors["base"] = "hacs_not_found"
-            else:
-                # Validate GitHub token if provided
-                token = user_input.get(CONF_GITHUB_TOKEN)
-                valid, error = await _validate_github_token(self.hass, token)
-                if not valid:
-                    errors["base"] = error or "cannot_connect"
-                else:
-                    return self.async_create_entry(
-                        title="HCA",
-                        data={
-                            CONF_GITHUB_TOKEN: token or "",
-                        },
-                        options={
-                            CONF_CHECK_INTERVAL: user_input.get(
-                                CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
-                            ),
-                            CONF_CACHE_HOURS: user_input.get(
-                                CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS
-                            ),
-                            CONF_GITHUB_TIMEOUT: user_input.get(
-                                CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT
-                            ),
-                            CONF_GITHUB_RETRIES: user_input.get(
-                                CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES
-                            ),
-                        },
-                    )
-
-        data_schema = vol.Schema(
-            {
-                vol.Optional(CONF_GITHUB_TOKEN): str,
-                vol.Optional(
-                    CONF_CHECK_INTERVAL, default=DEFAULT_CHECK_INTERVAL
-                ): vol.All(int, vol.Range(min=1, max=168)),
-                vol.Optional(CONF_CACHE_HOURS, default=DEFAULT_CACHE_HOURS): vol.All(
-                    int, vol.Range(min=1, max=72)
-                ),
-                vol.Optional(
-                    CONF_GITHUB_TIMEOUT, default=DEFAULT_GITHUB_TIMEOUT
-                ): vol.All(int, vol.Range(min=5, max=120)),
-                vol.Optional(
-                    CONF_GITHUB_RETRIES, default=DEFAULT_GITHUB_RETRIES
-                ): vol.All(int, vol.Range(min=0, max=10)),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=data_schema,
-            errors=errors,
-        )
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> HacsCompatibilityAuditorOptionsFlow:
-        """Get the options flow for this handler."""
-        return HacsCompatibilityAuditorOptionsFlow(config_entry)
-
-
 class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for HACS Compatibility Auditor."""
 
@@ -260,3 +180,86 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
             data_schema=data_schema,
             errors=errors,
         )
+
+
+class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for HACS Compatibility Auditor."""
+
+    VERSION = 1
+    MINOR_VERSION = 1
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the initial step."""
+        errors: dict[str, str] = {}
+
+        if self._async_current_entries():
+            return self.async_abort(reason="already_configured")
+
+        if user_input is not None:
+            # Validate HACS presence
+            if not await _validate_hacs(self.hass):
+                errors["base"] = "hacs_not_found"
+            else:
+                # Validate GitHub token if provided
+                token = user_input.get(CONF_GITHUB_TOKEN)
+                valid, error = await _validate_github_token(self.hass, token)
+                if not valid:
+                    errors["base"] = error or "cannot_connect"
+                else:
+                    return self.async_create_entry(
+                        title="HCA",
+                        data={
+                            CONF_GITHUB_TOKEN: token or "",
+                        },
+                        options={
+                            CONF_CHECK_INTERVAL: user_input.get(
+                                CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL
+                            ),
+                            CONF_CACHE_HOURS: user_input.get(
+                                CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS
+                            ),
+                            CONF_GITHUB_TIMEOUT: user_input.get(
+                                CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT
+                            ),
+                            CONF_GITHUB_RETRIES: user_input.get(
+                                CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES
+                            ),
+                        },
+                    )
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional(CONF_GITHUB_TOKEN): str,
+                vol.Optional(
+                    CONF_CHECK_INTERVAL, default=DEFAULT_CHECK_INTERVAL
+                ): vol.All(int, vol.Range(min=1, max=168)),
+                vol.Optional(CONF_CACHE_HOURS, default=DEFAULT_CACHE_HOURS): vol.All(
+                    int, vol.Range(min=1, max=72)
+                ),
+                vol.Optional(
+                    CONF_GITHUB_TIMEOUT, default=DEFAULT_GITHUB_TIMEOUT
+                ): vol.All(int, vol.Range(min=5, max=120)),
+                vol.Optional(
+                    CONF_GITHUB_RETRIES, default=DEFAULT_GITHUB_RETRIES
+                ): vol.All(int, vol.Range(min=0, max=10)),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=data_schema,
+            errors=errors,
+        )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> HacsCompatibilityAuditorOptionsFlow:
+        """Get the options flow for this handler."""
+        return HacsCompatibilityAuditorOptionsFlow(config_entry)
+
+
+

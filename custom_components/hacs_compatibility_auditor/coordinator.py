@@ -320,7 +320,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             if not cleaned:
                 return None
             return parse_version(cleaned)
-        except InvalidVersion, ValueError:
+        except (InvalidVersion, ValueError):
             return None
 
     @property

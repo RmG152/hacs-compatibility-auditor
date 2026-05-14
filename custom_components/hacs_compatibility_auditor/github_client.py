@@ -1,507 +1,549 @@
-"""HACS data repository reader.
+"""GitHub API client with rate limiting, caching and retry support."""
 
-This module reads the HACS stored data to enumerate installed packages
-without depending on internal HACS APIs that may change between versions.
-"""
-
-from dataclasses import dataclass
+import asyncio
+import base64
+from dataclasses import dataclass, field
 import json
 import logging
-from pathlib import Path
+import time
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+import aiohttp
 
-from .const import (
-    PACKAGE_TYPE_APPDAEMON,
-    PACKAGE_TYPE_INTEGRATION,
-    PACKAGE_TYPE_NETDAEMON,
-    PACKAGE_TYPE_PLUGIN,
-    PACKAGE_TYPE_PYTHON_SCRIPT,
-    PACKAGE_TYPE_THEME,
-)
+from .const import DEFAULT_GITHUB_RETRIES, DEFAULT_GITHUB_TIMEOUT, GITHUB_API_BASE
 
 _LOGGER = logging.getLogger(__name__)
 
-_ERRORS: tuple[type[Exception], ...] = (
-    OSError,
-    json.JSONDecodeError,
-    KeyError,
-    TypeError,
-    ValueError,
-)
+
+@dataclass
+class GitHubIssue:
+    """Represents a GitHub issue relevant to compatibility."""
+
+    title: str
+    url: str
+    state: str
+    labels: list[str] = field(default_factory=list)
+    created_at: str = ""
+    updated_at: str = ""
+    body: str = ""
+    priority: int = 0  # Higher = more relevant
 
 
 @dataclass
-class HacsPackage:
-    """Represents a HACS installed package."""
+class GitHubRelease:
+    """Represents a GitHub release."""
 
-    id: str
-    full_name: str  # "owner/repo"
+    tag_name: str
     name: str
-    category: str  # integration, plugin, theme, etc.
-    installed_version: str = ""
-    available_version: str = ""
-    installed: bool = False
-    repository_url: str = ""
-    owner: str = ""
-    repo: str = ""
-    description: str = ""
-    homeassistant_version: str = ""  # Declared HA version requirement
-    last_updated: str = ""
+    published_at: str
+    prerelease: bool
+    html_url: str
+    body: str = ""
 
 
-class HacsRepositoryReader:
-    """Reads HACS data to enumerate installed packages."""
+@dataclass
+class GitHubManifest:
+    """Represents a HACS manifest.json from a repository."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
-        """Initialize the HACS repository reader."""
-        self._hass = hass
+    name: str = ""
+    version: str = ""
+    homeassistant: str = ""  # Version requirement, e.g., "2024.1.0"
+    requirements: list[str] = field(default_factory=list)
+    zip_release: bool = False
+    filename: str = ""
 
-    async def get_installed_packages(self) -> list[HacsPackage]:
-        """Get all installed HACS packages.
 
-        This method tries multiple approaches to read HACS data:
-        1. Direct access to HACS internal data
-        2. Reading HACS .storage file
-        3. Reading from HACS repositories directory
-        """
-        _LOGGER.debug("Starting HACS package enumeration")
-        packages: list[HacsPackage] = []
+class GitHubClient:
+    """Async GitHub API client with rate limit handling and caching."""
 
-        # Approach 1: Try direct HACS access
-        _LOGGER.debug("Approach 1: Trying direct HACS internal data access")
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        token: str | None = None,
+        timeout: int = DEFAULT_GITHUB_TIMEOUT,
+        retries: int = DEFAULT_GITHUB_RETRIES,
+    ) -> None:
+        """Initialize the GitHub client."""
+        self._session = session
+        self._token = token
+        self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._retries = retries
+        self._rate_limit_remaining: int = 60
+        self._rate_limit_reset: float = 0
+        self._cache: dict[str, tuple[float, Any]] = {}
+        self._cache_ttl: float = 43200  # 12 hours in seconds
+
+    def _get_headers(self) -> dict[str, str]:
+        """Get request headers including auth if token is available."""
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+        }
+        if self._token:
+            headers["Authorization"] = f"token {self._token}"
+        return headers
+
+    async def close(self) -> None:
+        """Close the client (session is managed externally, this is a no-op)."""
+
+    async def validate_token(self) -> bool:
+        """Validate the GitHub token by making a test request."""
+        if not self._token:
+            _LOGGER.debug("No GitHub token configured, skipping validation")
+            return True
+        _LOGGER.debug("Validating GitHub token")
         try:
-            packages = await self._read_from_hacs_internal()
-            if packages:
-                _LOGGER.info(
-                    "Found %d HACS packages via internal data access", len(packages)
-                )
-                return packages
-            _LOGGER.debug("HACS internal data access returned no packages")
-        except (*_ERRORS,) as exc:
-            _LOGGER.debug("Could not read HACS internal data: %s", exc)
+            async with self._session.get(
+                f"{GITHUB_API_BASE}/user",
+                headers=self._get_headers(),
+                timeout=self._timeout,
+            ) as resp:
+                valid = resp.status == 200
+                _LOGGER.debug("GitHub token validation result: %s", valid)
+                return valid
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            _LOGGER.warning("GitHub token validation failed: %s", exc)
+            return False
 
-        # Approach 2: Read from HACS .storage file
-        _LOGGER.debug("Approach 2: Trying HACS .storage file")
-        try:
-            packages = await self._read_from_storage()
-            if packages:
-                _LOGGER.info("Found %d HACS packages via storage file", len(packages))
-                return packages
-            _LOGGER.debug("HACS storage file returned no packages")
-        except (*_ERRORS,) as exc:
-            _LOGGER.debug("Could not read HACS storage file: %s", exc)
+    def _is_cache_valid(self, key: str) -> bool:
+        """Check if a cached entry is still valid."""
+        if key not in self._cache:
+            return False
+        cached_time, _ = self._cache[key]
+        return (time.time() - cached_time) < self._cache_ttl
 
-        # Approach 3: Read from HACS repositories directory
-        _LOGGER.debug("Approach 3: Trying HACS repositories directory")
-        try:
-            packages = await self._read_from_repositories_dir()
-            if packages:
-                _LOGGER.info(
-                    "Found %d HACS packages via repositories directory", len(packages)
-                )
-                return packages
-            _LOGGER.debug("HACS repositories directory returned no packages")
-        except (*_ERRORS,) as exc:
-            _LOGGER.debug("Could not read HACS repositories dir: %s", exc)
+    def _get_cached(self, key: str) -> Any | None:
+        """Get a cached value if valid."""
+        if self._is_cache_valid(key):
+            _, data = self._cache[key]
+            _LOGGER.debug("Cache HIT for key: %s", key)
+            return data
+        _LOGGER.debug("Cache MISS for key: %s", key)
+        return None
 
-        # Log available hass.data keys to help diagnose missing HACS integration
-        hacs_keys = [k for k in self._hass.data if "hacs" in k.lower()]
-        if hacs_keys:
-            _LOGGER.debug("Available hass.data keys containing 'hacs': %s", hacs_keys)
-        else:
-            _LOGGER.debug(
-                "No hass.data keys containing 'hacs' found. Available keys: %s",
-                list(self._hass.data.keys()),
-            )
+    def _set_cache(self, key: str, data: Any) -> None:
+        """Store data in cache."""
+        self._cache[key] = (time.time(), data)
+        _LOGGER.debug(
+            "Cached response for key: %s (cache size: %d)", key, len(self._cache)
+        )
 
-        _LOGGER.warning("Could not read HACS data from any source")
-        return packages
+    def clear_cache(self) -> None:
+        """Clear the entire cache."""
+        _LOGGER.debug("Clearing cache (%d entries)", len(self._cache))
+        self._cache.clear()
 
-    async def _read_from_hacs_internal(self) -> list[HacsPackage]:
-        """Read packages from HACS internal data structure."""
-        hacs_data = self._hass.data.get("hacs")
-        if not hacs_data:
-            # Fallback: search for any hass.data key containing "hacs"
-            for key, value in self._hass.data.items():
-                if "hacs" in key.lower():
-                    _LOGGER.debug("Found HACS data under hass.data key: %s", key)
-                    hacs_data = value
-                    break
-        if not hacs_data:
-            _LOGGER.debug("HACS integration not found in hass.data")
-            return []
+    def update_cache_ttl(self, ttl_seconds: float) -> None:
+        """Update the cache TTL."""
+        self._cache_ttl = ttl_seconds
+
+    async def _request(self, url: str) -> dict[str, Any] | list[Any] | None:
+        """Make a rate-limit-aware request with retries and backoff."""
+        cache_key = url
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
 
         _LOGGER.debug(
-            "HACS data object type: %s, attributes: %s",
-            type(hacs_data).__name__,
-            [a for a in dir(hacs_data) if not a.startswith("_")][:10],
+            "GitHub API request: %s (rate_limit_remaining=%d)",
+            url,
+            self._rate_limit_remaining,
         )
 
-        packages = []
+        last_error: Exception | None = None
 
-        # Modern HACS: use list_downloaded (returns HacsRepository objects)
-        repositories_obj = getattr(hacs_data, "repositories", None)
-        if repositories_obj is not None:
-            _LOGGER.debug(
-                "Found HACS repositories object: %s", type(repositories_obj).__name__
-            )
-            list_downloaded = getattr(repositories_obj, "list_downloaded", None)
-            if list_downloaded is not None:
-                downloaded_count = (
-                    len(list_downloaded) if hasattr(list_downloaded, "__len__") else "?"
+        for attempt in range(self._retries):
+            # Check rate limits
+            if self._rate_limit_remaining <= 5 and self._rate_limit_reset > time.time():
+                wait_time = self._rate_limit_reset - time.time() + 1
+                _LOGGER.warning(
+                    "GitHub rate limit approaching. Waiting %.0f seconds", wait_time
                 )
-                _LOGGER.debug("Using list_downloaded (%s items)", downloaded_count)
-                for repo in list_downloaded:
-                    package = self._parse_hacs_repository(repo)
-                    if package and package.installed:
-                        packages.append(package)
-                if packages:
-                    _LOGGER.debug(
-                        "Parsed %d installed packages from list_downloaded",
-                        len(packages),
-                    )
-                    return packages
+                await asyncio.sleep(min(wait_time, 60))
 
-            # Fallback: iterate repositories directly
-            if isinstance(repositories_obj, dict):
-                _LOGGER.debug(
-                    "Iterating repositories dict (%d entries)", len(repositories_obj)
-                )
-                for repo in repositories_obj.values():
-                    package = self._parse_hacs_repository(repo)
-                    if package and package.installed:
-                        packages.append(package)
-            elif hasattr(repositories_obj, "__iter__"):
-                _LOGGER.debug("Iterating repositories collection")
-                for repo in repositories_obj:
-                    package = self._parse_hacs_repository(repo)
-                    if package and package.installed:
-                        packages.append(package)
-            if packages:
-                _LOGGER.debug(
-                    "Parsed %d installed packages from repositories collection",
-                    len(packages),
-                )
-                return packages
-
-        # Legacy: try hacs_data.repo
-        repo_obj = getattr(hacs_data, "repo", None)
-        if repo_obj is not None and hasattr(repo_obj, "__iter__"):
-            _LOGGER.debug("Trying legacy hacs_data.repo iteration")
-            for repo in repo_obj:
-                package = self._parse_hacs_repository(repo)
-                if package and package.installed:
-                    packages.append(package)
-
-        _LOGGER.debug("Internal HACS read: %d packages found", len(packages))
-        return packages
-
-    def _parse_hacs_repository(self, repo: Any) -> HacsPackage | None:
-        """Parse a HACS repository object into a HacsPackage."""
-        try:
-            # Modern HACS: data is in repo.data; legacy: direct attributes
-            source = getattr(repo, "data", repo)
-
-            full_name = getattr(source, "full_name", "") or ""
-            if not full_name:
-                _LOGGER.debug(
-                    "Skipping HACS repo with no full_name (type=%s)",
-                    type(repo).__name__,
-                )
-                return None
-
-            parts = full_name.split("/")
-            owner = parts[0] if len(parts) > 0 else ""
-            repo_name = parts[1] if len(parts) > 1 else ""
-
-            category = self._map_category(getattr(source, "category", "") or "")
-
-            installed_version = (
-                getattr(source, "version_installed", None)
-                or getattr(source, "installed_version", "")
-                or ""
-            )
-
-            available_version = (
-                getattr(source, "last_version", None)
-                or getattr(source, "available_version", "")
-                or ""
-            )
-
-            installed = getattr(source, "installed", False) or bool(installed_version)
-
-            # Try to get homeassistant_version from repository_manifest
-            homeassistant_version = ""
-            manifest = getattr(repo, "repository_manifest", None)
-            if manifest is not None:
-                homeassistant_version = getattr(manifest, "homeassistant", "") or ""
-            if not homeassistant_version:
-                homeassistant_version = (
-                    getattr(source, "homeassistant_version", "") or ""
-                )
-
-            _LOGGER.debug(
-                "Parsed HACS repo: %s (category=%s, installed=%s, version=%s, ha_req=%s)",
-                full_name,
-                category,
-                installed,
-                installed_version,
-                homeassistant_version,
-            )
-
-            return HacsPackage(
-                id=str(getattr(source, "id", full_name)),
-                full_name=full_name,
-                name=getattr(source, "name", "") or repo_name,
-                category=category,
-                installed_version=installed_version,
-                available_version=available_version,
-                installed=installed,
-                repository_url=f"https://github.com/{full_name}",
-                owner=owner,
-                repo=repo_name,
-                description=getattr(source, "description", "") or "",
-                homeassistant_version=homeassistant_version,
-            )
-        except (*_ERRORS,) as exc:
-            _LOGGER.debug("Error parsing HACS repository: %s", exc)
-            return None
-
-    async def _read_from_storage(self) -> list[HacsPackage]:
-        """Read packages from HACS .storage file."""
-        config_dir = self._hass.config.config_dir
-        storage_dir = Path(config_dir) / ".storage"
-
-        _LOGGER.debug("Looking for HACS storage files in: %s", storage_dir)
-
-        # Try storage files in order of preference
-        candidates = [
-            storage_dir / "hacs.repositories",  # Modern HACS: all repos dict
-            storage_dir / "hacs.data",  # Experimental: grouped by category
-            storage_dir / "hacs.hacs",  # Legacy metadata
-            storage_dir / "hacs",  # Ancient format
-        ]
-
-        for storage_path in candidates:
-            if not storage_path.exists():
-                _LOGGER.debug("Storage file not found: %s", storage_path.name)
-                continue
-            _LOGGER.debug("Reading HACS storage file: %s", storage_path.name)
             try:
-                data = await self._hass.async_add_executor_job(
-                    self._read_storage_file, str(storage_path)
-                )
-                packages = self._parse_storage_data(data, storage_path.name)
-                if packages:
-                    _LOGGER.debug(
-                        "Parsed %d packages from %s", len(packages), storage_path.name
-                    )
-                    return packages
-                _LOGGER.debug("No installed packages found in %s", storage_path.name)
-            except (*_ERRORS,) as exc:
-                _LOGGER.debug(
-                    "Error reading HACS storage %s: %s", storage_path.name, exc
-                )
+                async with self._session.get(
+                    url,
+                    headers=self._get_headers(),
+                    timeout=self._timeout,
+                ) as resp:
+                    # Update rate limit info
+                    remaining = resp.headers.get("X-RateLimit-Remaining")
+                    reset = resp.headers.get("X-RateLimit-Reset")
+                    if remaining is not None:
+                        self._rate_limit_remaining = int(remaining)
+                    if reset is not None:
+                        self._rate_limit_reset = float(reset)
 
-        # Final fallback: ancient path inside HACS component dir
-        ancient_path = Path(config_dir) / "custom_components" / "hacs" / ".storage"
-        if ancient_path.exists():
-            _LOGGER.debug("Trying legacy HACS storage path: %s", ancient_path)
-            try:
-                for f in ancient_path.iterdir():
-                    if f.suffix == ".json":
-                        _LOGGER.debug("Reading legacy storage file: %s", f.name)
-                        data = await self._hass.async_add_executor_job(
-                            self._read_storage_file, str(f)
-                        )
-                        packages = self._parse_storage_data(data, f.name)
-                        if packages:
-                            _LOGGER.debug(
-                                "Parsed %d packages from legacy %s",
-                                len(packages),
-                                f.name,
+                    _LOGGER.debug(
+                        "GitHub API response: %s -> status=%d, rate_limit_remaining=%s",
+                        url,
+                        resp.status,
+                        remaining,
+                    )
+
+                    if resp.status == 200:
+                        data = await resp.json()
+                        self._set_cache(cache_key, data)
+                        return data
+
+                    if resp.status == 403:
+                        # Rate limited
+                        if self._rate_limit_reset > time.time():
+                            wait_time = self._rate_limit_reset - time.time() + 1
+                            _LOGGER.warning(
+                                "GitHub rate limited. Waiting %.0f seconds (attempt %d/%d)",
+                                wait_time,
+                                attempt + 1,
+                                self._retries,
                             )
-                            return packages
-            except (*_ERRORS,) as exc:
-                _LOGGER.debug("Error reading legacy HACS storage: %s", exc)
-        else:
-            _LOGGER.debug("Legacy HACS storage path does not exist: %s", ancient_path)
+                            await asyncio.sleep(min(wait_time, 60))
+                            continue
+                        _LOGGER.error("GitHub API access forbidden (403)")
+                        return None
 
-        return []
+                    if resp.status == 404:
+                        _LOGGER.debug("GitHub resource not found: %s", url)
+                        return None
 
-    def _read_storage_file(self, path: str) -> dict[str, Any]:
-        """Read a storage file (run in executor)."""
-        with Path(path).open(encoding="utf-8") as f:
-            return json.loads(f.read())
-
-    def _parse_storage_data(
-        self, data: dict[str, Any], filename: str = ""
-    ) -> list[HacsPackage]:
-        """Parse HACS storage data into packages."""
-        packages = []
-
-        # Unwrap Store envelope
-        inner = data.get("data", data)
-
-        # Collect repository dicts from all recognized formats
-        repo_dicts: list[dict[str, Any]] = []
-
-        if filename == "hacs.repositories":
-            # Format: dict keyed by numeric repo ID
-            if isinstance(inner, dict):
-                repo_dicts = [v for v in inner.values() if isinstance(v, dict)]
-        elif filename == "hacs.data":
-            # Format: {"repositories": {"category": [{...}, ...], ...}}
-            by_category = inner.get("repositories", {})
-            if isinstance(by_category, dict):
-                for category_repos in by_category.values():
-                    if isinstance(category_repos, list):
-                        repo_dicts.extend(
-                            r for r in category_repos if isinstance(r, dict)
+                    if resp.status >= 500:
+                        _LOGGER.warning(
+                            "GitHub server error %d (attempt %d/%d): %s",
+                            resp.status,
+                            attempt + 1,
+                            self._retries,
+                            url,
                         )
-        else:
-            # Legacy formats: list of repos, or dict of repo objects
-            repositories = inner.get("repositories", inner.get("data", []))
-            if isinstance(repositories, dict):
-                repo_dicts = [v for v in repositories.values() if isinstance(v, dict)]
-            elif isinstance(repositories, list):
-                repo_dicts = [r for r in repositories if isinstance(r, dict)]
+                        await asyncio.sleep(2**attempt)
+                        continue
 
-        for repo_data in repo_dicts:
-            if not repo_data.get("installed", False):
-                continue
+                    _LOGGER.error(
+                        "Unexpected GitHub API status %d for %s",
+                        resp.status,
+                        url,
+                    )
+                    return None
 
-            full_name = repo_data.get("full_name", "")
-            if not full_name:
-                continue
-
-            parts = full_name.split("/")
-            owner = parts[0] if len(parts) > 0 else ""
-            repo_name = parts[1] if len(parts) > 1 else ""
-
-            # Storage uses "version_installed" (not "installed_version")
-            installed_version = (
-                repo_data.get("version_installed")
-                or repo_data.get("installed_version", "")
-                or ""
-            )
-            available_version = (
-                repo_data.get("last_version")
-                or repo_data.get("available_version", "")
-                or ""
-            )
-
-            packages.append(
-                HacsPackage(
-                    id=str(repo_data.get("id", full_name)),
-                    full_name=full_name,
-                    name=repo_data.get("name", "") or repo_name,
-                    category=self._map_category(repo_data.get("category", "")),
-                    installed_version=installed_version,
-                    available_version=available_version,
-                    installed=True,
-                    repository_url=f"https://github.com/{full_name}",
-                    owner=owner,
-                    repo=repo_name,
-                    description=repo_data.get("description", "") or "",
-                    homeassistant_version=(
-                        repo_data.get("homeassistant_version")
-                        or repo_data.get("repository_manifest", {}).get(
-                            "homeassistant", ""
-                        )
-                        or ""
-                    ),
+            except TimeoutError:
+                last_error = TimeoutError()
+                _LOGGER.warning(
+                    "GitHub request timeout (attempt %d/%d): %s",
+                    attempt + 1,
+                    self._retries,
+                    url,
                 )
-            )
+                await asyncio.sleep(2**attempt)
 
-        return packages
+            except aiohttp.ClientError as exc:
+                last_error = exc
+                _LOGGER.warning(
+                    "GitHub request error (attempt %d/%d): %s - %s",
+                    attempt + 1,
+                    self._retries,
+                    url,
+                    exc,
+                )
+                await asyncio.sleep(2**attempt)
 
-    async def _read_from_repositories_dir(self) -> list[HacsPackage]:
-        """Read packages from HACS repositories directory."""
-        config_dir = self._hass.config.config_dir
-        repos_path = Path(config_dir) / "custom_components" / "hacs" / "repositories"
+        _LOGGER.error("All retries exhausted for %s. Last error: %s", url, last_error)
+        return None
 
-        _LOGGER.debug("Looking for HACS repositories directory: %s", repos_path)
+    async def get_releases(
+        self, owner: str, repo: str, per_page: int = 10
+    ) -> list[GitHubRelease]:
+        """Get releases for a repository."""
+        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/releases?per_page={per_page}"
+        _LOGGER.debug(
+            "Fetching releases for %s/%s (per_page=%d)", owner, repo, per_page
+        )
+        data = await self._request(url)
 
-        if not repos_path.exists():
-            _LOGGER.debug("HACS repositories directory does not exist")
+        if not data or not isinstance(data, list):
+            _LOGGER.debug("No releases found for %s/%s", owner, repo)
             return []
 
-        packages = []
+        releases = [
+            GitHubRelease(
+                tag_name=item.get("tag_name", ""),
+                name=item.get("name", ""),
+                published_at=item.get("published_at", ""),
+                prerelease=item.get("prerelease", False),
+                html_url=item.get("html_url", ""),
+                body=item.get("body", ""),
+            )
+            for item in data[:per_page]
+        ]
+        _LOGGER.debug("Found %d releases for %s/%s", len(releases), owner, repo)
+        return releases
 
-        def _scan_dir() -> list[HacsPackage]:
-            found = []
+    async def get_tags(self, owner: str, repo: str, per_page: int = 10) -> list[str]:
+        """Get tags for a repository."""
+        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/tags?per_page={per_page}"
+        _LOGGER.debug("Fetching tags for %s/%s (per_page=%d)", owner, repo, per_page)
+        data = await self._request(url)
+
+        if not data or not isinstance(data, list):
+            _LOGGER.debug("No tags found for %s/%s", owner, repo)
+            return []
+
+        tags = [tag.get("name", "") for tag in data if tag.get("name")]
+        _LOGGER.debug("Found %d tags for %s/%s", len(tags), owner, repo)
+        return tags
+
+    async def get_manifest(self, owner: str, repo: str) -> GitHubManifest | None:
+        """Get the HACS manifest.json from a repository."""
+        _LOGGER.debug("Fetching manifest for %s/%s", owner, repo)
+
+        # Try hacs.json first (HACS v2 format)
+        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/hacs.json"
+        _LOGGER.debug("Trying hacs.json: %s", url)
+        data = await self._request(url)
+
+        if data and isinstance(data, dict) and "content" in data:
             try:
-                for category_dir in repos_path.iterdir():
-                    if not category_dir.is_dir():
-                        continue
-                    category = self._map_category(category_dir.name)
-                    for repo_file in category_dir.iterdir():
-                        if not repo_file.is_file() or repo_file.suffix != ".json":
-                            continue
-                        try:
-                            with repo_file.open(encoding="utf-8") as f:
-                                repo_data = json.loads(f.read())
-                            if not repo_data.get("installed", False):
-                                continue
-                            full_name = repo_data.get("full_name", "")
-                            if not full_name:
-                                continue
-                            parts = full_name.split("/")
-                            owner = parts[0] if len(parts) > 0 else ""
-                            repo_name = parts[1] if len(parts) > 1 else ""
-                            found.append(
-                                HacsPackage(
-                                    id=str(repo_data.get("id", full_name)),
-                                    full_name=full_name,
-                                    name=repo_data.get("name", "") or repo_name,
-                                    category=category,
-                                    installed_version=repo_data.get(
-                                        "installed_version", ""
-                                    )
-                                    or "",
-                                    available_version=repo_data.get("last_version", "")
-                                    or repo_data.get("available_version", "")
-                                    or "",
-                                    installed=True,
-                                    repository_url=f"https://github.com/{full_name}",
-                                    owner=owner,
-                                    repo=repo_name,
-                                    description=repo_data.get("description", "") or "",
-                                    homeassistant_version=repo_data.get(
-                                        "homeassistant_version", ""
-                                    )
-                                    or "",
-                                )
-                            )
-                        except (*_ERRORS,) as exc:
-                            _LOGGER.debug(
-                                "Error reading repo file %s: %s", repo_file, exc
-                            )
-            except (*_ERRORS,) as exc:
-                _LOGGER.debug("Error scanning repositories dir: %s", exc)
-            return found
+                content = base64.b64decode(data["content"]).decode("utf-8")
+                manifest_data = json.loads(content)
+                manifest = GitHubManifest(
+                    name=manifest_data.get("name", ""),
+                    version=manifest_data.get("version", ""),
+                    homeassistant=manifest_data.get("homeassistant", ""),
+                    requirements=manifest_data.get("requirements", []),
+                    zip_release=manifest_data.get("zip_release", False),
+                    filename=manifest_data.get("filename", ""),
+                )
+            except (json.JSONDecodeError, KeyError, ValueError) as exc:
+                _LOGGER.debug(
+                    "Failed to parse hacs.json for %s/%s: %s", owner, repo, exc
+                )
+            else:
+                _LOGGER.debug(
+                    "Found hacs.json for %s/%s (name=%s, version=%s, ha_req=%s)",
+                    owner,
+                    repo,
+                    manifest.name,
+                    manifest.version,
+                    manifest.homeassistant,
+                )
+                return manifest
 
-        packages = await self._hass.async_add_executor_job(_scan_dir)
-        _LOGGER.debug("Repositories directory scan: %d packages found", len(packages))
-        return packages
+        # Fallback: try manifest.json (custom component format)
+        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/custom_components/{repo}/manifest.json"
+        _LOGGER.debug("Trying manifest.json fallback: %s", url)
+        data = await self._request(url)
 
-    @staticmethod
-    def _map_category(raw: str) -> str:
-        """Map HACS category strings to standard types."""
-        mapping = {
-            "integration": PACKAGE_TYPE_INTEGRATION,
-            "plugin": PACKAGE_TYPE_PLUGIN,
-            "theme": PACKAGE_TYPE_THEME,
-            "appdaemon": PACKAGE_TYPE_APPDAEMON,
-            "netdaemon": PACKAGE_TYPE_NETDAEMON,
-            "python_script": PACKAGE_TYPE_PYTHON_SCRIPT,
-            "frontend": PACKAGE_TYPE_PLUGIN,
-            "card": PACKAGE_TYPE_PLUGIN,
-            "lovelace": PACKAGE_TYPE_PLUGIN,
-        }
-        return mapping.get(
-            raw.lower(), raw.lower() if raw else PACKAGE_TYPE_INTEGRATION
+        if data and isinstance(data, dict) and "content" in data:
+            try:
+                content = base64.b64decode(data["content"]).decode("utf-8")
+                manifest_data = json.loads(content)
+                manifest = GitHubManifest(
+                    name=manifest_data.get("name", ""),
+                    version=manifest_data.get("version", ""),
+                    homeassistant=manifest_data.get("homeassistant", ""),
+                    requirements=manifest_data.get("requirements", []),
+                )
+            except (json.JSONDecodeError, KeyError, ValueError) as exc:
+                _LOGGER.debug(
+                    "Failed to parse manifest.json for %s/%s: %s", owner, repo, exc
+                )
+            else:
+                _LOGGER.debug(
+                    "Found manifest.json for %s/%s (name=%s, version=%s, ha_req=%s)",
+                    owner,
+                    repo,
+                    manifest.name,
+                    manifest.version,
+                    manifest.homeassistant,
+                )
+                return manifest
+
+        _LOGGER.debug("No manifest found for %s/%s", owner, repo)
+        return None
+
+    async def get_issues(
+        self,
+        owner: str,
+        repo: str,
+        labels: list[str] | None = None,
+        keywords: list[str] | None = None,
+        state: str = "open",
+        per_page: int = 30,
+        since: str | None = None,
+    ) -> list[GitHubIssue]:
+        """Search for issues related to compatibility in a repository."""
+        _LOGGER.debug(
+            "Fetching issues for %s/%s (labels=%s, keywords=%s, state=%s, since=%s)",
+            owner,
+            repo,
+            labels,
+            keywords,
+            state,
+            since,
         )
+        all_issues: list[GitHubIssue] = []
+
+        # First, search by labels if provided
+        if labels:
+            for label in labels[:5]:  # Limit to avoid too many API calls
+                url = (
+                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues"
+                    f"?state={state}&labels={label}&per_page={per_page}"
+                )
+                if since:
+                    url += f"&since={since}"
+
+                _LOGGER.debug(
+                    "Searching issues by label '%s' for %s/%s", label, owner, repo
+                )
+                data = await self._request(url)
+                if data and isinstance(data, list):
+                    count = 0
+                    for item in data:
+                        # Skip PRs
+                        if item.get("pull_request"):
+                            continue
+                        issue_labels = [
+                            lbl.get("name", "") for lbl in item.get("labels", [])
+                        ]
+                        all_issues.append(
+                            GitHubIssue(
+                                title=item.get("title", ""),
+                                url=item.get("html_url", ""),
+                                state=item.get("state", ""),
+                                labels=issue_labels,
+                                created_at=item.get("created_at", ""),
+                                updated_at=item.get("updated_at", ""),
+                                body=item.get("body", "")[:500]
+                                if item.get("body")
+                                else "",
+                                priority=self._calculate_issue_priority(
+                                    issue_labels, label
+                                ),
+                            )
+                        )
+                        count += 1
+                    _LOGGER.debug(
+                        "Found %d issues for label '%s' in %s/%s",
+                        count,
+                        label,
+                        owner,
+                        repo,
+                    )
+
+        # Also search using GitHub search API for keywords
+        if keywords:
+            for keyword in keywords[:3]:  # Limit keyword searches
+                search_query = f"repo:{owner}/{repo} is:issue is:{state} {keyword}"
+                url = (
+                    f"{GITHUB_API_BASE}/search/issues"
+                    f"?q={search_query}&per_page={per_page}"
+                )
+                _LOGGER.debug(
+                    "Searching issues by keyword '%s' for %s/%s", keyword, owner, repo
+                )
+                data = await self._request(url)
+                if data and isinstance(data, dict) and "items" in data:
+                    count = 0
+                    for item in data["items"]:
+                        issue_labels = [
+                            lbl.get("name", "") for lbl in item.get("labels", [])
+                        ]
+                        # Check if already found
+                        existing_urls = {i.url for i in all_issues}
+                        if item.get("html_url", "") in existing_urls:
+                            continue
+                        all_issues.append(
+                            GitHubIssue(
+                                title=item.get("title", ""),
+                                url=item.get("html_url", ""),
+                                state=item.get("state", ""),
+                                labels=issue_labels,
+                                created_at=item.get("created_at", ""),
+                                updated_at=item.get("updated_at", ""),
+                                body=item.get("body", "")[:500]
+                                if item.get("body")
+                                else "",
+                                priority=self._calculate_keyword_priority(
+                                    issue_labels, keyword
+                                ),
+                            )
+                        )
+                        count += 1
+                    _LOGGER.debug(
+                        "Found %d issues for keyword '%s' in %s/%s",
+                        count,
+                        keyword,
+                        owner,
+                        repo,
+                    )
+
+        # Sort by priority (highest first) and deduplicate
+        seen_urls: set[str] = set()
+        unique_issues: list[GitHubIssue] = []
+        for issue in sorted(all_issues, key=lambda x: x.priority, reverse=True):
+            if issue.url not in seen_urls:
+                seen_urls.add(issue.url)
+                unique_issues.append(issue)
+
+        result = unique_issues[:20]  # Limit to top 20 most relevant
+        _LOGGER.debug(
+            "Total unique issues for %s/%s: %d (from %d raw)",
+            owner,
+            repo,
+            len(result),
+            len(all_issues),
+        )
+        return result
+
+    async def get_ha_releases(self, per_page: int = 5) -> list[GitHubRelease]:
+        """Get Home Assistant core releases."""
+        _LOGGER.debug("Fetching Home Assistant core releases (per_page=%d)", per_page)
+        releases = await self.get_releases("home-assistant", "core", per_page)
+        _LOGGER.debug("Found %d HA core releases", len(releases))
+        return releases
+
+    def _calculate_issue_priority(
+        self, issue_labels: list[str], matched_label: str
+    ) -> int:
+        """Calculate priority score for a label-matched issue."""
+        score = 5  # Base score for label match
+        high_priority_labels = {
+            "breaking-change": 20,
+            "breaking": 15,
+            "incompatible": 15,
+            "deprecation": 10,
+            "upgrade": 8,
+            "compatibility": 8,
+        }
+        for label in issue_labels:
+            label_lower = label.lower()
+            if label_lower in high_priority_labels:
+                score += high_priority_labels[label_lower]
+        return score
+
+    def _calculate_keyword_priority(
+        self, issue_labels: list[str], matched_keyword: str
+    ) -> int:
+        """Calculate priority score for a keyword-matched issue."""
+        score = 2  # Lower base score for keyword match
+        keyword_boost = {
+            "breaking change": 10,
+            "incompatible": 8,
+            "not compatible": 8,
+            "deprecated": 6,
+            "stopped working": 5,
+            "no longer works": 5,
+        }
+        if matched_keyword.lower() in keyword_boost:
+            score += keyword_boost[matched_keyword.lower()]
+
+        # Also boost by labels
+        high_priority_labels = {
+            "breaking-change": 15,
+            "breaking": 12,
+            "incompatible": 12,
+            "bug": 3,
+        }
+        for label in issue_labels:
+            label_lower = label.lower()
+            if label_lower in high_priority_labels:
+                score += high_priority_labels[label_lower]
+        return score
