@@ -206,6 +206,7 @@ class HacsPackageSensor(CoordinatorEntity, SensorEntity):
             "issues_relevant": data.get("issues_relevant", []),
             "last_checked": data.get("last_checked", ""),
             "error": data.get("error", ""),
+            "reason": data.get("reason", ""),
             "repository_url": f"https://github.com/{self._package_full_name}",
         }
 

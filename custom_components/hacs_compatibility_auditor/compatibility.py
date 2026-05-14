@@ -45,6 +45,7 @@ class CompatibilityResult:
     manifest_ha_requirement: str = ""
     last_checked: str = ""
     error: str = ""
+    reason: str = ""
     data: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -62,6 +63,7 @@ class CompatibilityResult:
             "manifest_ha_requirement": self.manifest_ha_requirement,
             "last_checked": self.last_checked,
             "error": self.error,
+            "reason": self.reason,
         }
 
 
@@ -274,14 +276,37 @@ class CompatibilityChecker:
                 result.status = STATUS_INCOMPATIBLE
                 result.compatible_with_current = False
                 result.compatible_with_next = manifest_compatible_next and not has_incompatible_issue
+                reasons: list[str] = []
+                if not manifest_compatible_current:
+                    reasons.append(
+                        f"Manifest requires HA {result.manifest_ha_requirement}, "
+                        f"current version {ha_current} does not satisfy it"
+                    )
+                if has_incompatible_issue:
+                    high_prio = [i for i in issues if i.priority >= 15]
+                    reasons.append(f"{len(high_prio)} high-priority issue(s) found")
+                result.reason = "; ".join(reasons)
             elif (ha_next and not manifest_compatible_next) or has_warning_issue or release_breaking:
                 result.status = STATUS_WARNING
                 result.compatible_with_current = manifest_compatible_current and not has_warning_issue
                 result.compatible_with_next = manifest_compatible_next and not release_breaking
+                reasons = []
+                if ha_next and not manifest_compatible_next:
+                    reasons.append(
+                        f"Manifest requires HA {result.manifest_ha_requirement}, "
+                        f"next version {ha_next} may not satisfy it"
+                    )
+                if has_warning_issue:
+                    mid_prio = [i for i in issues if 5 <= i.priority < 15]
+                    reasons.append(f"{len(mid_prio)} warning issue(s) found")
+                if release_breaking:
+                    reasons.append("Breaking change keywords found in recent release notes")
+                result.reason = "; ".join(reasons)
             else:
                 result.status = STATUS_COMPATIBLE
                 result.compatible_with_current = True
                 result.compatible_with_next = True
+                result.reason = "No compatibility issues detected"
 
             _LOGGER.info(
                 "Compatibility result for %s: status=%s, current=%s, next=%s, "
