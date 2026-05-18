@@ -104,6 +104,8 @@ Access options from Settings → Integrations → HACS Compatibility Auditor →
 2. Create a new token (classic) with minimal permissions: `public_repo` (read-only).
 3. Copy the token and paste it into the integration configuration.
 
+**Issue creation (report_to_rules / ai_confirm_report):** These services try to create issues on the rules repository via the GitHub API. If the token lacks write permissions (e.g., fine-grained PATs, or classic PATs restricted by organization policy), the services return a **fallback URL** with the issue pre-filled using the correct template. Open the URL in your browser to complete the submission manually.
+
 > For the full service API schema including response formats and frontend usage examples, see [docs/services.md](docs/services.md).
 
 ## Services

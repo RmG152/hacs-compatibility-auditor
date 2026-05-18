@@ -65,7 +65,10 @@ ai_categorize_issue:
 
 report_to_rules:
   name: Reportar a reglas comunitarias
-  description: Crea una incidencia en el repositorio de reglas comunitarias con el análisis de IA.
+  description: >
+    Crea una incidencia en el repositorio de reglas comunitarias con el análisis de IA.
+    Si el token de GitHub no tiene permisos de escritura, devuelve un enlace de
+    respaldo para crear la incidencia manualmente usando la plantilla adecuada.
   fields:
     repository:
       name: Repositorio
@@ -101,7 +104,7 @@ report_to_rules:
           multiline: true
     action:
       name: Acción
-      description: Tipo de reporte a generar
+      description: Tipo de reporte a generar. "add_false_positive" usa la plantilla false_positive_report.yml; "report_incompatibility" usa la plantilla blacklist_request.yml.
       required: true
       selector:
         select:
@@ -123,7 +126,10 @@ ai_analyze_all:
 
 ai_confirm_report:
   name: Confirmar y reportar con IA
-  description: Crea una incidencia en el repositorio de reglas usando el análisis de IA almacenado para un paquete.
+  description: >
+    Crea una incidencia en el repositorio de reglas usando el análisis de IA almacenado para un paquete.
+    Si el token de GitHub no tiene permisos de escritura, devuelve un enlace de
+    respaldo para crear la incidencia manualmente usando la plantilla adecuada.
   fields:
     repository:
       name: Repositorio
@@ -134,7 +140,7 @@ ai_confirm_report:
         text:
     action:
       name: Acción
-      description: "Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility)"
+      description: "Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility). 'add_false_positive' usa la plantilla false_positive_report.yml; 'report_incompatibility' usa blacklist_request.yml."
       required: false
       example: "add_false_positive"
       selector:

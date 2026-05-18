@@ -235,7 +235,9 @@ data:
 
 ## `hacs_compatibility_auditor.report_to_rules`
 
-Creates a GitHub issue on the community rules repository ([RmG152/hacs-compatibility-auditor-rules](https://github.com/RmG152/hacs-compatibility-auditor-rules)) with the AI analysis results. Requires a valid GitHub token with `public_repo` scope.
+Creates a GitHub issue on the community rules repository ([RmG152/hacs-compatibility-auditor-rules](https://github.com/RmG152/hacs-compatibility-auditor-rules)) with the AI analysis results. 
+
+**Token requirements:** If a GitHub token with write permissions is configured, the issue is created via API. If the API call fails (e.g., token lacks write permissions) or no token is configured, the service returns a fallback URL for manual issue creation using the correct template.
 
 ### Request
 
@@ -257,9 +259,9 @@ data:
 | `issue_number` | `integer` | **Yes** | GitHub issue number being reported |
 | `category` | `string` | **Yes** | AI categorization result (one of the categories above) |
 | `reasoning` | `string` | **Yes** | AI reasoning for the categorization |
-| `action` | `string` | **Yes** | `add_false_positive` or `report_incompatibility` |
+| `action` | `string` | **Yes** | `add_false_positive` or `report_incompatibility`. Determines the issue template used |
 
-### Response
+### Response (API success)
 
 ```json
 {
@@ -268,6 +270,33 @@ data:
   "issue_number": 1
 }
 ```
+
+### Response (API failure — fallback)
+
+When the API cannot create the issue (token lacks write permissions or no token configured), the service returns a fallback response with a pre-filled URL:
+
+```json
+{
+  "success": false,
+  "fallback": true,
+  "fallback_url": "https://github.com/RmG152/hacs-compatibility-auditor-rules/issues/new?template=false_positive_report.yml&title=...",
+  "fallback_title": "[AI Report] owner/repo#42 - false_positive",
+  "fallback_body": "## AI Report: ...",
+  "template": "false_positive_report.yml",
+  "error": "Could not create issue via API. Use the fallback URL to create it manually."
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fallback_url` | `string` | Pre-filled GitHub URL with the correct template and title |
+| `fallback_title` | `string` | Issue title for reference |
+| `fallback_body` | `string` | Full issue body in markdown (copy into the template fields) |
+| `template` | `string` | Template file name (`false_positive_report.yml` or `blacklist_request.yml`) |
+
+The `action` field determines which template is used:
+- `add_false_positive` → [`false_positive_report.yml`](https://github.com/RmG152/hacs-compatibility-auditor-rules/blob/main/.github/ISSUE_TEMPLATE/false_positive_report.yml)
+- `report_incompatibility` → [`blacklist_request.yml`](https://github.com/RmG152/hacs-compatibility-auditor-rules/blob/main/.github/ISSUE_TEMPLATE/blacklist_request.yml)
 
 ---
 
@@ -339,6 +368,8 @@ data:
 
 Creates a GitHub issue on the community rules repository using **stored AI analysis** for a given package. This allows users to confirm AI verdicts and contribute them to the shared rules database.
 
+**Token requirements:** Same as `report_to_rules` — if the API call fails or no token is configured, returns a fallback URL for manual issue creation.
+
 ### Request
 
 ```yaml
@@ -353,9 +384,9 @@ data:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `repository` | `string` | **Yes** | Full repository name in `owner/repo` format |
-| `action` | `string` | No | Override action. Derived from verdict when omitted: `not_affected` → `add_false_positive`, `affected` → `report_incompatibility` |
+| `action` | `string` | No | Override action. Derived from verdict when omitted: `not_affected` → `add_false_positive`, `affected` → `report_incompatibility`. Determines the issue template used |
 
-### Response
+### Response (API success)
 
 ```json
 {
@@ -367,12 +398,29 @@ data:
 }
 ```
 
+### Response (API failure — fallback)
+
+```json
+{
+  "success": false,
+  "fallback": true,
+  "fallback_url": "https://github.com/RmG152/hacs-compatibility-auditor-rules/issues/new?template=false_positive_report.yml&title=...",
+  "fallback_title": "[AI Confirmed] owner/repo - not_affected (95%)",
+  "fallback_body": "## AI Confirmed Report...",
+  "template": "false_positive_report.yml",
+  "verdict": "not_affected",
+  "action": "add_false_positive",
+  "error": "Could not create issue via API. Use the fallback URL to create it manually."
+}
+```
+
 ### Behavior
 
 1. Looks up the stored AI analysis for the given repository
 2. If no AI analysis exists, returns an error (run `ai_analyze_package` or `ai_analyze_all` first)
-3. Creates a GitHub issue on the rules repo with the verdict, reasoning, and confidence
-4. Returns the issue URL for reference
+3. Tries to create a GitHub issue on the rules repo via API
+4. On API success, returns the issue URL and number
+5. On API failure (or no token), returns a fallback URL pre-filled with the correct template and content for manual creation
 
 ---
 

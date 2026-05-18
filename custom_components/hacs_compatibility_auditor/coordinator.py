@@ -849,12 +849,13 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         reasoning: str,
         action: str,
     ) -> dict[str, Any]:
-        """Create a GitHub issue on the rules repository about a finding."""
+        """Create a GitHub issue on the rules repository about a finding.
+
+        If the API-based creation fails (e.g., token lacks write permissions),
+        returns a fallback URL and body for manual issue creation.
+        """
         if not self._github_client:
             return {"success": False, "error": "GitHub client not initialized"}
-
-        if not self._github_token:
-            return {"success": False, "error": "GitHub token required to create issues"}
 
         title = f"[AI Report] {repository}#{issue_number} - {category}"
         body = (
@@ -867,6 +868,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             f"---\n*Reported automatically by HACS Compatibility Auditor*"
         )
 
+        # Determine the correct issue template
+        template = "false_positive_report.yml" if action == "add_false_positive" else "blacklist_request.yml"
         labels = [f"ai-{action}", f"ai-{category}"]
         rules_repo = self._rules_repo
 
@@ -874,15 +877,34 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
 
         owner, repo = rules_repo.split("/", 1)
-        issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
 
-        if issue_data:
-            return {
-                "success": True,
-                "issue_url": issue_data.get("html_url", ""),
-                "issue_number": issue_data.get("number", 0),
-            }
-        return {"success": False, "error": "Failed to create issue on rules repository"}
+        # Try API-based creation first
+        if self._github_token:
+            issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
+            if issue_data:
+                return {
+                    "success": True,
+                    "issue_url": issue_data.get("html_url", ""),
+                    "issue_number": issue_data.get("number", 0),
+                }
+
+        # API failed or no token — build fallback URL for manual creation
+        fallback_url = self._github_client.build_issue_fallback_url(
+            owner, repo, title, body, template=template,
+        )
+        return {
+            "success": False,
+            "fallback": True,
+            "fallback_url": fallback_url,
+            "fallback_title": title,
+            "fallback_body": body,
+            "template": template,
+            "error": (
+                "Could not create issue via API. Use the fallback URL to create it manually."
+                if self._github_token else
+                "No GitHub token configured. Use the fallback URL to create the issue manually."
+            ),
+        }
 
     async def async_analyze_all(
         self,
@@ -975,11 +997,13 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         repository: str,
         action: str | None = None,
     ) -> dict[str, Any]:
-        """Create a rules repo issue from stored AI analysis for a package."""
+        """Create a rules repo issue from stored AI analysis for a package.
+
+        If the API-based creation fails (e.g., token lacks write permissions),
+        returns a fallback URL and body for manual issue creation.
+        """
         if not self._github_client:
             return {"success": False, "error": "GitHub client not initialized"}
-        if not self._github_token:
-            return {"success": False, "error": "GitHub token required to create issues"}
 
         # Find stored result with AI analysis
         result_dict = None
@@ -1017,23 +1041,46 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             f"---\n*Confirmed via HACS Compatibility Auditor*"
         )
 
+        # Determine the correct issue template
+        template = "false_positive_report.yml" if resolved_action == "add_false_positive" else "blacklist_request.yml"
         labels = [f"ai-{verdict}", "ai-confirmed"]
         rules_repo = self._rules_repo
         if "/" not in rules_repo:
             return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
 
         owner, repo = rules_repo.split("/", 1)
-        issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
 
-        if issue_data:
-            return {
-                "success": True,
-                "issue_url": issue_data.get("html_url", ""),
-                "issue_number": issue_data.get("number", 0),
-                "verdict": verdict,
-                "action": resolved_action,
-            }
-        return {"success": False, "error": "Failed to create issue on rules repository"}
+        # Try API-based creation first
+        if self._github_token:
+            issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
+            if issue_data:
+                return {
+                    "success": True,
+                    "issue_url": issue_data.get("html_url", ""),
+                    "issue_number": issue_data.get("number", 0),
+                    "verdict": verdict,
+                    "action": resolved_action,
+                }
+
+        # API failed or no token — build fallback URL for manual creation
+        fallback_url = self._github_client.build_issue_fallback_url(
+            owner, repo, title, body, template=template,
+        )
+        return {
+            "success": False,
+            "fallback": True,
+            "fallback_url": fallback_url,
+            "fallback_title": title,
+            "fallback_body": body,
+            "template": template,
+            "verdict": verdict,
+            "action": resolved_action,
+            "error": (
+                "Could not create issue via API. Use the fallback URL to create it manually."
+                if self._github_token else
+                "No GitHub token configured. Use the fallback URL to create the issue manually."
+            ),
+        }
 
     async def async_check_single_package(self, repository: str) -> dict[str, Any] | None:
         """Check compatibility for a single package by repository name."""

@@ -13,6 +13,8 @@ import aiohttp
 
 from .const import DEFAULT_GITHUB_RETRIES, DEFAULT_GITHUB_TIMEOUT, GITHUB_API_BASE
 
+FALLBACK_BODY_MAX_LENGTH = 6000
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -100,7 +102,20 @@ class GitHubClient:
                 timeout=self._timeout,
             ) as resp:
                 valid = resp.status == 200
-                _LOGGER.debug("GitHub token validation result: %s", valid)
+                scopes = resp.headers.get("X-OAuth-Scopes", "")
+                if valid:
+                    _LOGGER.debug(
+                        "GitHub token valid — scopes: %s",
+                        scopes or "none (fine-grained PAT?)",
+                    )
+                    if scopes and "public_repo" not in scopes and "repo" not in scopes:
+                        _LOGGER.warning(
+                            "GitHub token lacks 'public_repo' scope — "
+                            "issue creation will likely fail. Got: %s",
+                            scopes,
+                        )
+                else:
+                    _LOGGER.debug("GitHub token validation result: %s", valid)
                 return valid
         except (aiohttp.ClientError, TimeoutError) as exc:
             _LOGGER.warning("GitHub token validation failed: %s", exc)
@@ -521,6 +536,39 @@ class GitHubClient:
         except (aiohttp.ClientError, TimeoutError, json.JSONDecodeError) as exc:
             _LOGGER.error("Error creating issue on %s/%s: %s", owner, repo, exc)
             return None
+
+    @staticmethod
+    def build_issue_fallback_url(
+        owner: str,
+        repo: str,
+        title: str,
+        body: str = "",
+        template: str | None = None,
+    ) -> str:
+        """Build a pre-filled GitHub issue URL for manual creation.
+
+        When the API-based issue creation fails (e.g., due to insufficient token
+        permissions), this builds a URL to the GitHub web interface with the
+        issue content pre-filled.
+
+        The URL uses the ``template`` parameter to select the correct issue form,
+        and ``title``/``body`` to pre-fill the corresponding fields. The body is
+        truncated to avoid exceeding browser URL length limits.
+        """
+        encoded_title = quote(title)
+
+        truncated = body[:FALLBACK_BODY_MAX_LENGTH]
+        if len(body) > FALLBACK_BODY_MAX_LENGTH:
+            truncated += "\n\n*(Truncated due to URL length limits)*"
+        encoded_body = quote(truncated)
+
+        url = f"https://github.com/{owner}/{repo}/issues/new"
+        url += f"?title={encoded_title}"
+        url += f"&body={encoded_body}"
+        if template:
+            url += f"&template={template}"
+
+        return url
 
     def _calculate_issue_priority(self, issue_labels: list[str], matched_label: str) -> int:
         """Calculate priority score for a label-matched issue."""
