@@ -38,9 +38,38 @@
           "github_retries": "Reintentos de consultas GitHub",
           "rules_enabled": "Usar reglas de la comunidad",
           "rules_repo": "Repositorio de reglas (owner/repo)",
-          "batch_size": "Tamaño de lote (paquetes comprobados simultáneamente)"
+          "batch_size": "Tamaño de lote (paquetes comprobados simultáneamente)",
+          "ai_enabled": "Habilitar análisis con IA",
+          "ai_auto_analyze": "Analizar automáticamente con IA durante el escaneo por lotes",
+          "manage_ai_providers": "Configurar proveedores de IA (marca para gestionar)"
+        }
+      },
+      "ai_providers": {
+        "title": "Proveedores de IA",
+        "description": "{providers}",
+        "data": {
+          "action": "Acción"
+        }
+      },
+      "ai_add_provider": {
+        "title": "Añadir/Editar proveedor de IA",
+        "description": "Configura un proveedor de IA. Para Ollama, no se necesita API key.",
+        "data": {
+          "provider_type": "Tipo de proveedor",
+          "name": "Nombre del proveedor",
+          "api_key": "API key",
+          "base_url": "URL base",
+          "model": "Modelo",
+          "max_tokens": "Máx. tokens",
+          "temperature": "Temperatura"
         }
       }
+    },
+    "error": {
+      "provider_name_required": "El nombre del proveedor es obligatorio",
+      "provider_model_required": "El nombre del modelo es obligatorio",
+      "provider_url_required": "La URL base es obligatoria",
+      "provider_key_required": "La API key es obligatoria para este tipo de proveedor"
     }
   },
   "entity": {
@@ -74,6 +103,78 @@
         "repository": {
           "name": "Repositorio",
           "description": "Nombre completo del repositorio (ej. 'home-assistant/core')"
+        }
+      }
+    },
+    "ai_analyze_package": {
+      "name": "Analizar con IA",
+      "description": "Utiliza un proveedor de IA para analizar si un paquete HACS tiene problemas reales de compatibilidad.",
+      "fields": {
+        "repository": {
+          "name": "Repositorio",
+          "description": "Nombre completo del repositorio (ej. 'owner/repo')"
+        },
+        "provider": {
+          "name": "Proveedor IA",
+          "description": "Nombre del proveedor de IA a utilizar (opcional, usa el primero configurado)"
+        }
+      }
+    },
+    "ai_categorize_issue": {
+      "name": "Categorizar incidencia con IA",
+      "description": "Utiliza IA para categorizar una incidencia específica de GitHub.",
+      "fields": {
+        "repository": {
+          "name": "Repositorio",
+          "description": "Nombre completo del repositorio (ej. 'owner/repo')"
+        },
+        "issue_number": {
+          "name": "Número de incidencia",
+          "description": "Número de la incidencia en GitHub"
+        },
+        "provider": {
+          "name": "Proveedor IA",
+          "description": "Nombre del proveedor de IA a utilizar (opcional)"
+        }
+      }
+    },
+    "report_to_rules": {
+      "name": "Reportar a reglas comunitarias",
+      "description": "Crea una incidencia en el repositorio de reglas comunitarias con el análisis de IA.",
+      "fields": {
+        "repository": {
+          "name": "Repositorio",
+          "description": "Nombre completo del repositorio del paquete afectado"
+        },
+        "issue_number": {
+          "name": "Número de incidencia",
+          "description": "Número de la incidencia en GitHub que se está reportando"
+        },
+        "category": {
+          "name": "Categoría",
+          "description": "Categorización realizada por la IA"
+        },
+        "reasoning": {
+          "name": "Razonamiento",
+          "description": "Explicación de la IA sobre la categorización"
+        },
+        "action": {
+          "name": "Acción",
+          "description": "Tipo de reporte (add_false_positive o report_incompatibility)"
+        }
+      }
+    },
+    "ai_confirm_report": {
+      "name": "Confirmar y reportar con IA",
+      "description": "Crea una incidencia en el repositorio de reglas usando el análisis de IA almacenado para un paquete.",
+      "fields": {
+        "repository": {
+          "name": "Repositorio",
+          "description": "Nombre completo del repositorio (ej. 'owner/repo')"
+        },
+        "action": {
+          "name": "Acción",
+          "description": "Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility)"
         }
       }
     }

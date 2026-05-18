@@ -38,9 +38,38 @@
           "github_retries": "GitHub query retries",
           "rules_enabled": "Use community rules",
           "rules_repo": "Rules repository (owner/repo)",
-          "batch_size": "Batch size (packages checked concurrently)"
+          "batch_size": "Batch size (packages checked concurrently)",
+          "ai_enabled": "Enable AI analysis",
+          "ai_auto_analyze": "Auto-analyze with AI during batch scan",
+          "manage_ai_providers": "Configure AI providers (check to manage)"
+        }
+      },
+      "ai_providers": {
+        "title": "AI Providers",
+        "description": "{providers}",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "ai_add_provider": {
+        "title": "Add/Edit AI Provider",
+        "description": "Configure an AI provider. For Ollama, API key is not needed.",
+        "data": {
+          "provider_type": "Provider type",
+          "name": "Provider name",
+          "api_key": "API key",
+          "base_url": "Base URL",
+          "model": "Model",
+          "max_tokens": "Max tokens",
+          "temperature": "Temperature"
         }
       }
+    },
+    "error": {
+      "provider_name_required": "Provider name is required",
+      "provider_model_required": "Model name is required",
+      "provider_url_required": "Base URL is required",
+      "provider_key_required": "API key is required for this provider type"
     }
   },
   "entity": {
@@ -74,6 +103,78 @@
         "repository": {
           "name": "Repository",
           "description": "Full repository name (e.g. 'home-assistant/core')"
+        }
+      }
+    },
+    "ai_analyze_package": {
+      "name": "Analyze with AI",
+      "description": "Uses an AI provider to analyze if a HACS package has real compatibility issues.",
+      "fields": {
+        "repository": {
+          "name": "Repository",
+          "description": "Full repository name (e.g. 'owner/repo')"
+        },
+        "provider": {
+          "name": "AI Provider",
+          "description": "Name of the AI provider to use (optional, uses first configured)"
+        }
+      }
+    },
+    "ai_categorize_issue": {
+      "name": "Categorize issue with AI",
+      "description": "Uses AI to categorize a specific GitHub issue.",
+      "fields": {
+        "repository": {
+          "name": "Repository",
+          "description": "Full repository name (e.g. 'owner/repo')"
+        },
+        "issue_number": {
+          "name": "Issue number",
+          "description": "GitHub issue number"
+        },
+        "provider": {
+          "name": "AI Provider",
+          "description": "Name of the AI provider to use (optional)"
+        }
+      }
+    },
+    "report_to_rules": {
+      "name": "Report to rules repository",
+      "description": "Creates a GitHub issue on the community rules repository with AI analysis.",
+      "fields": {
+        "repository": {
+          "name": "Repository",
+          "description": "Full repository name of the affected package"
+        },
+        "issue_number": {
+          "name": "Issue number",
+          "description": "GitHub issue number being reported"
+        },
+        "category": {
+          "name": "Category",
+          "description": "AI categorization result"
+        },
+        "reasoning": {
+          "name": "Reasoning",
+          "description": "AI reasoning for the categorization"
+        },
+        "action": {
+          "name": "Action",
+          "description": "Type of report (add_false_positive or report_incompatibility)"
+        }
+      }
+    },
+    "ai_confirm_report": {
+      "name": "Confirm and report with AI",
+      "description": "Creates a GitHub issue on the rules repository using stored AI analysis for a package.",
+      "fields": {
+        "repository": {
+          "name": "Repository",
+          "description": "Full repository name (e.g. 'owner/repo')"
+        },
+        "action": {
+          "name": "Action",
+          "description": "Action to take (optional, derived from verdict: not_affected->add_false_positive, affected->report_incompatibility)"
         }
       }
     }

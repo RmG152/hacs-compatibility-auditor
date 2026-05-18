@@ -99,6 +99,28 @@ The `HacsCompatibilityCoordinator._async_update_data()` orchestrates the scan:
 | 6 | **Background batch scan** | Process pending packages in concurrent batches of N (default 5) |
 | 7 | Aggregate counts | Tallies `compatible`, `warning`, `incompatible`, `unknown` |
 
+### AI Analysis Integration (Optional)
+
+When AI is **enabled** and **auto-analyze** is turned on in the options, the flow extends after Phase 2:
+
+```
+For each INCOMPATIBLE or WARNING package:
+  └── Send context (issues, manifest, versions) to AI provider
+       └── AI returns: verdict (affected/not_affected/uncertain)
+                        + reasoning + confidence
+       └── Result stored in ai_analysis field (does not override algorithm status)
+```
+
+The AI analysis can also be triggered on-demand via two services:
+- `ai_analyze_package` — Full analysis of a package's compatibility
+- `ai_categorize_issue` — Categorize a specific issue (true positive / false positive / etc.)
+
+Reports can be submitted to the community rules repository via `report_to_rules`.
+
+See [services.md](services.md) for the full service API.
+
+---
+
 ### Phase 2 — Per-Package Check (`CompatibilityChecker.check_package`)
 
 For each HACS package, the following steps execute sequentially:
@@ -325,3 +347,5 @@ HACS Packages ────┤  (from HACS storage)
 | `hacs_repository.py` | Reads installed HACS packages from multiple sources |
 | `const.py` | Default labels, keywords, status constants |
 | `sensor.py` | Exposes results as HA sensor entities (global + per-package) with scan progress attributes |
+| `ai_provider.py` | AI provider abstraction: base class + 4 implementations (OpenAI-compatible, Gemini, Anthropic, Ollama) |
+| `ai_service.py` | AI orchestration: AIManager, prompt building, analysis/categorization flows |

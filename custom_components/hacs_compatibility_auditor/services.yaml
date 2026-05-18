@@ -12,8 +12,139 @@ check_package:
   fields:
     repository:
       name: Repositorio
+      description: Nombre completo del repositorio (ej. "home-assistant/core")
+      required: true
+      example: "home-assistant/core"
+      selector:
+        text:
+
+ai_analyze_package:
+  name: Analizar con IA
+  description: Utiliza un proveedor de IA para analizar si un paquete HACS tiene problemas reales de compatibilidad.
+  fields:
+    repository:
+      name: Repositorio
       description: Nombre completo del repositorio (ej. "owner/repo")
       required: true
       example: "home-assistant/core"
       selector:
         text:
+    provider:
+      name: Proveedor IA
+      description: Nombre del proveedor de IA a utilizar (opcional, usa el primero configurado)
+      required: false
+      example: "Mi OpenAI"
+      selector:
+        text:
+
+ai_categorize_issue:
+  name: Categorizar incidencia con IA
+  description: Utiliza IA para categorizar una incidencia específica de GitHub y determinar si realmente afecta la compatibilidad.
+  fields:
+    repository:
+      name: Repositorio
+      description: Nombre completo del repositorio (ej. "owner/repo")
+      required: true
+      example: "home-assistant/core"
+      selector:
+        text:
+    issue_number:
+      name: Número de incidencia
+      description: Número de la incidencia en GitHub
+      required: true
+      selector:
+        number:
+          min: 1
+    provider:
+      name: Proveedor IA
+      description: Nombre del proveedor de IA a utilizar (opcional)
+      required: false
+      example: "Mi OpenAI"
+      selector:
+        text:
+
+report_to_rules:
+  name: Reportar a reglas comunitarias
+  description: >
+    Crea una incidencia en el repositorio de reglas comunitarias con el análisis de IA.
+    Si el token de GitHub no tiene permisos de escritura, devuelve un enlace de
+    respaldo para crear la incidencia manualmente usando la plantilla adecuada.
+  fields:
+    repository:
+      name: Repositorio
+      description: Nombre completo del repositorio del paquete afectado
+      required: true
+      example: "owner/repo"
+      selector:
+        text:
+    issue_number:
+      name: Número de incidencia
+      description: Número de la incidencia en GitHub que se está reportando
+      required: true
+      selector:
+        number:
+          min: 1
+    category:
+      name: Categoría
+      description: Categorización realizada por la IA
+      required: true
+      selector:
+        select:
+          options:
+            - "true_positive"
+            - "false_positive"
+            - "config_issue"
+            - "unrelated"
+    reasoning:
+      name: Razonamiento
+      description: Explicación de la IA sobre la categorización
+      required: true
+      selector:
+        text:
+          multiline: true
+    action:
+      name: Acción
+      description: Tipo de reporte a generar. "add_false_positive" usa la plantilla false_positive_report.yml; "report_incompatibility" usa la plantilla blacklist_request.yml.
+      required: true
+      selector:
+        select:
+          options:
+            - "add_false_positive"
+            - "report_incompatibility"
+
+ai_analyze_all:
+  name: Analizar todo con IA
+  description: Ejecuta análisis con IA sobre todos los paquetes que no estén en estado compatible.
+  fields:
+    provider:
+      name: Proveedor IA
+      description: Nombre del proveedor de IA a utilizar (opcional, usa el primero configurado)
+      required: false
+      example: "Mi OpenAI"
+      selector:
+        text:
+
+ai_confirm_report:
+  name: Confirmar y reportar con IA
+  description: >
+    Crea una incidencia en el repositorio de reglas usando el análisis de IA almacenado para un paquete.
+    Si el token de GitHub no tiene permisos de escritura, devuelve un enlace de
+    respaldo para crear la incidencia manualmente usando la plantilla adecuada.
+  fields:
+    repository:
+      name: Repositorio
+      description: Nombre completo del repositorio (ej. "owner/repo")
+      required: true
+      example: "home-assistant/core"
+      selector:
+        text:
+    action:
+      name: Acción
+      description: "Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility). 'add_false_positive' usa la plantilla false_positive_report.yml; 'report_incompatibility' usa blacklist_request.yml."
+      required: false
+      example: "add_false_positive"
+      selector:
+        select:
+          options:
+            - "add_false_positive"
+            - "report_incompatibility"

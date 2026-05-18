@@ -18,6 +18,11 @@ Home Assistant integration that detects the current and next version of Home Ass
 - **Persistent cache**: Results survive HA restarts. On restart, cached data is loaded from disk instantly and only expired entries are re-fetched.
 - **Batch processing**: Packages are checked in concurrent batches (default 5), preventing timeouts in large installations. Progress is saved after each batch.
 - **Community rules engine**: Downloads community-sourced rules from a GitHub repository to whitelist, blacklist, or fine-tune compatibility detection per package. → [Default rules repo](https://github.com/RmG152/hacs-compatibility-auditor-rules)
+- **AI Analysis (optional)**: Integrates with AI providers (OpenAI, Gemini, Anthropic, Ollama) to validate compatibility findings and reduce false positives.
+- **Multi-provider AI**: Configure 1+ AI providers with individual API keys, URLs, and models. Supports OpenAI-compatible (OpenAI, OpenRouter, Minimax, StepFun...), Google Gemini, Anthropic Claude, and Ollama (local, no API key needed).
+- **AI Analysis Service**: `ai_analyze_package` — Analyzes a package using AI and returns verdict + reasoning.
+- **Issue Categorization Service**: `ai_categorize_issue` — Categorizes specific GitHub issues (true positive / false positive / etc.).
+- **Report to Rules**: `report_to_rules` — Creates a GitHub issue on the community rules repository with AI findings.
 - **Lovelace Card**: Includes a custom card with filterable summary, repository links, and quick actions. → [Card repository](https://github.com/RmG152/hacs-compatibility-auditor-card)
 
 ## Sensors
@@ -98,6 +103,8 @@ Access options from Settings → Integrations → HACS Compatibility Auditor →
 1. Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens).
 2. Create a new token (classic) with minimal permissions: `public_repo` (read-only).
 3. Copy the token and paste it into the integration configuration.
+
+**Issue creation (report_to_rules / ai_confirm_report):** These services try to create issues on the rules repository via the GitHub API. If the token lacks write permissions (e.g., fine-grained PATs, or classic PATs restricted by organization policy), the services return a **fallback URL** with the issue pre-filled using the correct template. Open the URL in your browser to complete the submission manually.
 
 > For the full service API schema including response formats and frontend usage examples, see [docs/services.md](docs/services.md).
 

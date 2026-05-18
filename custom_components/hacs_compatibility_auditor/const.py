@@ -80,6 +80,73 @@ SERVICE_CHECK_PACKAGE = "check_package"
 # Platform
 PLATFORMS = ["sensor"]
 
+# AI Provider configuration
+CONF_AI_ENABLED = "ai_enabled"
+CONF_AI_AUTO_ANALYZE = "ai_auto_analyze"
+CONF_AI_PROVIDERS = "ai_providers"
+
+DEFAULT_AI_ENABLED = False
+DEFAULT_AI_AUTO_ANALYZE = False
+
+PROVIDER_TYPE_OPENAI = "openai_compatible"
+PROVIDER_TYPE_GEMINI = "gemini"
+PROVIDER_TYPE_ANTHROPIC = "anthropic"
+PROVIDER_TYPE_OLLAMA = "ollama"
+
+DEFAULT_PROVIDER_URLS: dict[str, str] = {
+    PROVIDER_TYPE_OPENAI: "https://api.openai.com/v1",
+    PROVIDER_TYPE_GEMINI: "https://generativelanguage.googleapis.com/v1beta",
+    PROVIDER_TYPE_ANTHROPIC: "https://api.anthropic.com",
+    PROVIDER_TYPE_OLLAMA: "http://localhost:11434/v1",
+}
+
+DEFAULT_PROVIDER_MODELS: dict[str, str] = {
+    PROVIDER_TYPE_OPENAI: "gpt-4o-mini",
+    PROVIDER_TYPE_GEMINI: "gemini-2.0-flash",
+    PROVIDER_TYPE_ANTHROPIC: "claude-sonnet-4-20250514",
+    PROVIDER_TYPE_OLLAMA: "llama3.2",
+}
+
+CONF_AI_PROVIDER_TYPE = "provider_type"
+CONF_AI_PROVIDER_NAME = "name"
+CONF_AI_API_KEY = "api_key"
+CONF_AI_BASE_URL = "base_url"
+CONF_AI_MODEL = "model"
+CONF_AI_MAX_TOKENS = "max_tokens"
+CONF_AI_TEMPERATURE = "temperature"
+
+DEFAULT_AI_MAX_TOKENS = 1024
+DEFAULT_AI_TEMPERATURE = 0.1
+
+# AI categorization categories
+AI_CATEGORY_TRUE_POSITIVE = "true_positive"
+AI_CATEGORY_FALSE_POSITIVE = "false_positive"
+AI_CATEGORY_CONFIG_ISSUE = "config_issue"
+AI_CATEGORY_FEATURE_REQUEST = "feature_request"
+AI_CATEGORY_UNRELATED = "unrelated"
+AI_CATEGORY_UNCERTAIN = "uncertain"
+
+AI_CATEGORIES = [
+    AI_CATEGORY_TRUE_POSITIVE,
+    AI_CATEGORY_FALSE_POSITIVE,
+    AI_CATEGORY_CONFIG_ISSUE,
+    AI_CATEGORY_FEATURE_REQUEST,
+    AI_CATEGORY_UNRELATED,
+    AI_CATEGORY_UNCERTAIN,
+]
+
+# AI verdicts
+AI_VERDICT_AFFECTED = "affected"
+AI_VERDICT_NOT_AFFECTED = "not_affected"
+AI_VERDICT_UNCERTAIN = "uncertain"
+
+# Service names
+SERVICE_AI_ANALYZE_PACKAGE = "ai_analyze_package"
+SERVICE_AI_CATEGORIZE_ISSUE = "ai_categorize_issue"
+SERVICE_AI_ANALYZE_ALL = "ai_analyze_all"
+SERVICE_AI_CONFIRM_REPORT = "ai_confirm_report"
+SERVICE_REPORT_TO_RULES = "report_to_rules"
+
 # Signals
 SIGNAL_COMPATIBILITY_UPDATED = f"{DOMAIN}_compatibility_updated"
 

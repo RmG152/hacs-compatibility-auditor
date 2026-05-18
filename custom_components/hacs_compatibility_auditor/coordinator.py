@@ -18,9 +18,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .ai_service import AIManager
 from .cache_manager import CacheManager
 from .compatibility import CompatibilityChecker, CompatibilityResult
 from .const import (
+    CONF_AI_AUTO_ANALYZE,
+    CONF_AI_ENABLED,
+    CONF_AI_PROVIDERS,
     CONF_BATCH_SIZE,
     CONF_CACHE_HOURS,
     CONF_CHECK_INTERVAL,
@@ -31,6 +35,8 @@ from .const import (
     CONF_ISSUE_LABELS_PRIORITY,
     CONF_RULES_ENABLED,
     CONF_RULES_REPO,
+    DEFAULT_AI_AUTO_ANALYZE,
+    DEFAULT_AI_ENABLED,
     DEFAULT_BATCH_SIZE,
     DEFAULT_CACHE_HOURS,
     DEFAULT_CHECK_INTERVAL,
@@ -40,7 +46,9 @@ from .const import (
     DEFAULT_RULES_ENABLED,
     DEFAULT_RULES_REPO,
     DOMAIN,
+    GITHUB_API_BASE,
     STATUS_COMPATIBLE,
+    STATUS_IGNORED,
     STATUS_INCOMPATIBLE,
     STATUS_UNKNOWN,
     STATUS_WARNING,
@@ -112,6 +120,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         self._github_client: GitHubClient | None = None
         self._checker: CompatibilityChecker | None = None
         self._rules_client: RulesClient | None = None
+        self._ai_manager: AIManager | None = None
         self._hacs_reader = HacsRepositoryReader(hass)
         self._cache_manager: CacheManager | None = None
         self._scan_lock = asyncio.Lock()
@@ -133,6 +142,9 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         self._rules_enabled = entry_options.get(CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED)
         self._rules_repo = entry_options.get(CONF_RULES_REPO, DEFAULT_RULES_REPO)
         self._batch_size = entry_options.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE)
+        self._ai_enabled = entry_options.get(CONF_AI_ENABLED, DEFAULT_AI_ENABLED)
+        self._ai_auto_analyze = entry_options.get(CONF_AI_AUTO_ANALYZE, DEFAULT_AI_AUTO_ANALYZE)
+        self._ai_providers_config = entry_options.get(CONF_AI_PROVIDERS, [])
 
         super().__init__(
             hass,
@@ -196,6 +208,16 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             ignore_list=self._ignore_list,
             rules_client=rules_client,
         )
+
+        # Initialize AI manager (if AI is enabled and providers configured)
+        if self._ai_enabled and self._ai_providers_config:
+            _LOGGER.debug(
+                "Initializing AIManager with %d provider(s)",
+                len(self._ai_providers_config),
+            )
+            self._ai_manager = AIManager(self.hass, self._ai_providers_config)
+        else:
+            self._ai_manager = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from all sources with rate limiting and batch processing."""
@@ -453,6 +475,13 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 continue
             if isinstance(result, CompatibilityResult):
                 result_dict = result.to_dict()
+                # AI auto-analyze for incompatible/warning packages
+                if (
+                    self._ai_manager
+                    and self._ai_auto_analyze
+                    and result.status in (STATUS_INCOMPATIBLE, STATUS_WARNING)
+                ):
+                    await self._ai_analyze_result(result, result_dict)
                 self._data.results.append(result_dict)
                 if self._cache_manager:
                     self._cache_manager.set_entry(
@@ -462,6 +491,44 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                     )
 
         self._data.scan_progress = len(self._data.results)
+
+    async def _ai_analyze_result(self, result: CompatibilityResult, result_dict: dict) -> None:
+        """Run AI analysis on a result and update it with findings."""
+        if not self._ai_manager:
+            return
+        try:
+            issues = [
+                {
+                    "title": i.get("title", ""),
+                    "url": i.get("url", ""),
+                    "labels": i.get("labels", []),
+                    "priority": i.get("priority", 0),
+                    "body": "",
+                }
+                for i in result_dict.get("issues_relevant", [])
+            ]
+            ai_result = await self._ai_manager.analyze_package(
+                package_name=result.package.name,
+                package_repo=result.package.full_name,
+                installed_version=result.package.installed_version or "",
+                ha_current=self._data.ha_current,
+                ha_next=self._data.ha_next,
+                manifest_ha=result.manifest_ha_requirement,
+                current_status=result.status,
+                issues=issues,
+                reason=result.reason,
+                release_notes=result.data.get("matching_releases"),
+            )
+            result.ai_analysis = ai_result.to_dict()
+            result_dict["ai_analysis"] = result.ai_analysis
+            _LOGGER.debug(
+                "AI analysis for %s: verdict=%s, confidence=%.2f",
+                result.package.full_name,
+                ai_result.verdict,
+                ai_result.confidence,
+            )
+        except (ValueError, KeyError, TypeError, RuntimeError) as exc:
+            _LOGGER.warning("AI analysis failed for %s: %s", result.package.full_name, exc)
 
     async def _background_batch_scan(
         self,
@@ -616,6 +683,413 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         """Return the data container."""
         return self._data
 
+    @property
+    def ai_manager(self) -> AIManager | None:
+        """Return the AI manager instance."""
+        return self._ai_manager
+
+    @property
+    def github_client(self) -> GitHubClient | None:
+        """Return the GitHub client instance."""
+        return self._github_client
+
+    async def async_analyze_package(
+        self,
+        repository: str,
+        provider_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Run AI analysis on a package by repository name."""
+        if not self._ai_manager:
+            return {"success": False, "error": "AI is not configured or enabled"}
+
+        if not self._checker:
+            return {"success": False, "error": "Compatibility checker not initialized"}
+
+        # Find the package
+        pkg = None
+        for p in self._data.packages:
+            if p.full_name == repository:
+                pkg = p
+                break
+
+        if not pkg:
+            return {"success": False, "error": f"Package {repository} not found"}
+
+        # Run compatibility check first to gather context
+        result = await self._checker.check_package(
+            pkg,
+            self._data.ha_current,
+            self._data.ha_next,
+        )
+        result_dict = result.to_dict()
+
+        issues = [
+            {
+                "title": i.get("title", ""),
+                "url": i.get("url", ""),
+                "labels": i.get("labels", []),
+                "priority": i.get("priority", 0),
+                "body": "",
+            }
+            for i in result_dict.get("issues_relevant", [])
+        ]
+
+        ai_result = await self._ai_manager.analyze_package(
+            package_name=pkg.name,
+            package_repo=pkg.full_name,
+            installed_version=pkg.installed_version or "",
+            ha_current=self._data.ha_current,
+            ha_next=self._data.ha_next,
+            manifest_ha=result.manifest_ha_requirement,
+            current_status=result.status,
+            issues=issues,
+            provider_name=provider_name,
+            reason=result.reason,
+            release_notes=result.data.get("matching_releases"),
+        )
+
+        ai_dict = ai_result.to_dict()
+
+        # Store AI result back into the result list so sensors update
+        for i, r in enumerate(self._data.results):
+            if r.get("repository") == repository:
+                self._data.results[i]["ai_analysis"] = ai_dict
+                if self._cache_manager:
+                    self._cache_manager.set_entry(repository, self._data.results[i], self._data.ha_current)
+                    await self._cache_manager.async_save()
+                break
+
+        self.async_set_updated_data(self._data.to_dict())
+
+        return {
+            "success": not ai_result.error,
+            "result": ai_dict,
+            "algorithm_status": result.status,
+        }
+
+    async def async_categorize_issue(
+        self,
+        repository: str,
+        issue_number: int,
+        provider_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Run AI categorization on a specific issue."""
+        if not self._ai_manager:
+            return {"success": False, "error": "AI is not configured or enabled"}
+
+        if not self._github_client:
+            return {"success": False, "error": "GitHub client not initialized"}
+
+        # Parse owner/repo
+        parts = repository.split("/")
+        if len(parts) != 2:
+            return {"success": False, "error": f"Invalid repository format: {repository}"}
+        owner, repo = parts
+
+        try:
+            # Fetch the specific issue from GitHub
+            url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}"
+            session = async_create_clientsession(self.hass)
+            headers = {"Accept": "application/vnd.github.v3+json"}
+            if self._github_token:
+                headers["Authorization"] = f"token {self._github_token}"
+
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    return {"success": False, "error": f"GitHub API returned {resp.status}"}
+                issue_data = await resp.json()
+
+            issue_title = issue_data.get("title", "")
+            issue_body = issue_data.get("body", "")
+            issue_labels = [lb.get("name", "") for lb in issue_data.get("labels", [])]
+
+            result = await self._ai_manager.categorize_issue(
+                package_name=repo,
+                package_repo=repository,
+                issue_title=issue_title,
+                issue_body=issue_body,
+                issue_labels=issue_labels,
+                issue_number=issue_number,
+                ha_current=self._data.ha_current,
+                ha_next=self._data.ha_next,
+                provider_name=provider_name,
+            )
+
+            # Store categorization in the result list
+            result_dict = result.to_dict()
+            for i, r in enumerate(self._data.results):
+                if r.get("repository") == repository:
+                    categorizations = dict(r.get("ai_categorizations", {}))
+                    categorizations[str(issue_number)] = result_dict
+                    self._data.results[i]["ai_categorizations"] = categorizations
+                    if self._cache_manager:
+                        self._cache_manager.set_entry(repository, self._data.results[i], self._data.ha_current)
+                    break
+
+            if self._cache_manager:
+                await self._cache_manager.async_save()
+
+            self.async_set_updated_data(self._data.to_dict())
+
+            return {
+                "success": not result.error,
+                "result": result_dict,
+            }
+
+        except (TimeoutError, aiohttp.ClientError, ValueError, KeyError) as exc:
+            return {"success": False, "error": str(exc)}
+        finally:
+            await session.close()
+
+    async def async_report_to_rules(
+        self,
+        repository: str,
+        issue_number: int,
+        category: str,
+        reasoning: str,
+        action: str,
+    ) -> dict[str, Any]:
+        """Create a GitHub issue on the rules repository about a finding.
+
+        If the API-based creation fails (e.g., token lacks write permissions),
+        returns a fallback URL and body for manual issue creation.
+        """
+        if not self._github_client:
+            return {"success": False, "error": "GitHub client not initialized"}
+
+        title = f"[AI Report] {repository}#{issue_number} - {category}"
+        body = (
+            f"## AI Report: {category}\n\n"
+            f"- **Package**: `{repository}`\n"
+            f"- **Issue**: #{issue_number}\n"
+            f"- **Category**: `{category}`\n"
+            f"- **Action**: `{action}`\n\n"
+            f"### AI Reasoning\n\n{reasoning}\n\n"
+            f"---\n*Reported automatically by HACS Compatibility Auditor*"
+        )
+
+        # Determine the correct issue template
+        template = "false_positive_report.yml" if action == "add_false_positive" else "blacklist_request.yml"
+        labels = [f"ai-{action}", f"ai-{category}"]
+        rules_repo = self._rules_repo
+
+        if "/" not in rules_repo:
+            return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
+
+        owner, repo = rules_repo.split("/", 1)
+
+        # Try API-based creation first
+        if self._github_token:
+            issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
+            if issue_data:
+                return {
+                    "success": True,
+                    "issue_url": issue_data.get("html_url", ""),
+                    "issue_number": issue_data.get("number", 0),
+                }
+
+        # API failed or no token — build fallback URL for manual creation
+        fallback_url = self._github_client.build_issue_fallback_url(
+            owner,
+            repo,
+            title,
+            body,
+            template=template,
+        )
+        return {
+            "success": False,
+            "fallback": True,
+            "fallback_url": fallback_url,
+            "fallback_title": title,
+            "fallback_body": body,
+            "template": template,
+            "error": (
+                "Could not create issue via API. Use the fallback URL to create it manually."
+                if self._github_token
+                else "No GitHub token configured. Use the fallback URL to create the issue manually."
+            ),
+        }
+
+    async def async_analyze_all(
+        self,
+        provider_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Run AI analysis on all packages not marked as compatible."""
+        if not self._ai_manager:
+            return {"success": False, "error": "AI is not configured or enabled"}
+        if not self._checker:
+            return {"success": False, "error": "Compatibility checker not initialized"}
+
+        analyzed: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        for i, result_dict in enumerate(self._data.results):
+            status = result_dict.get("status", "")
+            if status == STATUS_COMPATIBLE or status == STATUS_IGNORED:
+                continue
+
+            repository = result_dict.get("repository", "")
+            if not repository:
+                continue
+
+            pkg = next((p for p in self._data.packages if p.full_name == repository), None)
+            if not pkg:
+                errors.append({"repository": repository, "error": "Package not found"})
+                continue
+
+            try:
+                result = await self._checker.check_package(
+                    pkg,
+                    self._data.ha_current,
+                    self._data.ha_next,
+                )
+                fresh = result.to_dict()
+                issues = [
+                    {
+                        "title": i.get("title", ""),
+                        "url": i.get("url", ""),
+                        "labels": i.get("labels", []),
+                        "priority": i.get("priority", 0),
+                        "body": "",
+                    }
+                    for i in fresh.get("issues_relevant", [])
+                ]
+
+                ai_result = await self._ai_manager.analyze_package(
+                    package_name=pkg.name,
+                    package_repo=pkg.full_name,
+                    installed_version=pkg.installed_version or "",
+                    ha_current=self._data.ha_current,
+                    ha_next=self._data.ha_next,
+                    manifest_ha=result.manifest_ha_requirement,
+                    current_status=result.status,
+                    issues=issues,
+                    provider_name=provider_name,
+                    reason=result.reason,
+                    release_notes=result.data.get("matching_releases"),
+                )
+
+                self._data.results[i]["ai_analysis"] = ai_result.to_dict()
+
+                if self._cache_manager:
+                    self._cache_manager.set_entry(repository, self._data.results[i], self._data.ha_current)
+
+                analyzed.append(
+                    {
+                        "repository": repository,
+                        "status": result.status,
+                        "ai_result": ai_result.to_dict(),
+                    }
+                )
+            except Exception as exc:
+                _LOGGER.warning("AI analysis failed for %s: %s", repository, exc)
+                errors.append({"repository": repository, "error": str(exc)})
+
+        self.async_set_updated_data(self._data.to_dict())
+
+        return {
+            "success": True,
+            "total": len(analyzed) + len(errors),
+            "analyzed": len(analyzed),
+            "errors": len(errors),
+            "results": analyzed,
+            "error_details": errors,
+        }
+
+    async def async_confirm_report(
+        self,
+        repository: str,
+        action: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a rules repo issue from stored AI analysis for a package.
+
+        If the API-based creation fails (e.g., token lacks write permissions),
+        returns a fallback URL and body for manual issue creation.
+        """
+        if not self._github_client:
+            return {"success": False, "error": "GitHub client not initialized"}
+
+        # Find stored result with AI analysis
+        result_dict = None
+        for r in self._data.results:
+            if r.get("repository") == repository:
+                result_dict = r
+                break
+
+        if not result_dict:
+            return {"success": False, "error": f"Package {repository} not found in results"}
+
+        ai = result_dict.get("ai_analysis", {}) or {}
+        if not ai or ai.get("error"):
+            return {"success": False, "error": f"No AI analysis available for {repository}"}
+
+        verdict = ai.get("verdict", "uncertain")
+        reasoning = ai.get("reasoning", "No reasoning provided")
+        confidence = ai.get("confidence", 0)
+        provider = ai.get("provider_used", "unknown")
+
+        resolved_action = action
+        if not resolved_action:
+            resolved_action = "add_false_positive" if verdict == "not_affected" else "report_incompatibility"
+
+        title = f"[AI Confirmed] {repository} - {verdict} ({confidence:.0%})"
+        body = (
+            f"## AI Confirmed Report\n\n"
+            f"- **Package**: `{repository}`\n"
+            f"- **Verdict**: `{verdict}`\n"
+            f"- **Confidence**: {confidence:.0%}\n"
+            f"- **AI Provider**: {provider}\n"
+            f"- **Action**: `{resolved_action}`\n\n"
+            f"### AI Reasoning\n\n{reasoning}\n\n"
+            f"### Algorithm Status\n\n{result_dict.get('reason', 'N/A')}\n\n"
+            f"---\n*Confirmed via HACS Compatibility Auditor*"
+        )
+
+        # Determine the correct issue template
+        template = "false_positive_report.yml" if resolved_action == "add_false_positive" else "blacklist_request.yml"
+        labels = [f"ai-{verdict}", "ai-confirmed"]
+        rules_repo = self._rules_repo
+        if "/" not in rules_repo:
+            return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
+
+        owner, repo = rules_repo.split("/", 1)
+
+        # Try API-based creation first
+        if self._github_token:
+            issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
+            if issue_data:
+                return {
+                    "success": True,
+                    "issue_url": issue_data.get("html_url", ""),
+                    "issue_number": issue_data.get("number", 0),
+                    "verdict": verdict,
+                    "action": resolved_action,
+                }
+
+        # API failed or no token — build fallback URL for manual creation
+        fallback_url = self._github_client.build_issue_fallback_url(
+            owner,
+            repo,
+            title,
+            body,
+            template=template,
+        )
+        return {
+            "success": False,
+            "fallback": True,
+            "fallback_url": fallback_url,
+            "fallback_title": title,
+            "fallback_body": body,
+            "template": template,
+            "verdict": verdict,
+            "action": resolved_action,
+            "error": (
+                "Could not create issue via API. Use the fallback URL to create it manually."
+                if self._github_token
+                else "No GitHub token configured. Use the fallback URL to create the issue manually."
+            ),
+        }
+
     async def async_check_single_package(self, repository: str) -> dict[str, Any] | None:
         """Check compatibility for a single package by repository name."""
         if not self._checker or not self._github_client:
@@ -696,6 +1170,18 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         self._rules_enabled = entry_options.get(CONF_RULES_ENABLED, DEFAULT_RULES_ENABLED)
         self._rules_repo = entry_options.get(CONF_RULES_REPO, DEFAULT_RULES_REPO)
         self._batch_size = entry_options.get(CONF_BATCH_SIZE, DEFAULT_BATCH_SIZE)
+        self._ai_enabled = entry_options.get(CONF_AI_ENABLED, DEFAULT_AI_ENABLED)
+        self._ai_auto_analyze = entry_options.get(CONF_AI_AUTO_ANALYZE, DEFAULT_AI_AUTO_ANALYZE)
+        self._ai_providers_config = entry_options.get(CONF_AI_PROVIDERS, [])
+
+        # Update AI manager
+        if self._ai_enabled and self._ai_providers_config:
+            if self._ai_manager:
+                self._ai_manager.load_providers(self._ai_providers_config)
+            else:
+                self._ai_manager = AIManager(self.hass, self._ai_providers_config)
+        else:
+            self._ai_manager = None
 
         # Update interval
         self.update_interval = timedelta(hours=self._check_interval)

@@ -85,6 +85,8 @@ Accede a las opciones desde Configuración → Integraciones → HACS Compatibil
 2. Crea un nuevo token (classic) con permisos mínimos: `public_repo` (solo lectura).
 3. Copia el token y pégalo en la configuración de la integración.
 
+**Creación de incidencias (report_to_rules / ai_confirm_report):** Estos servicios intentan crear incidencias en el repositorio de reglas mediante la API de GitHub. Si el token no tiene permisos de escritura (p. ej., tokens fine-grained o classic restringidos por política organizativa), los servicios devuelven un **enlace de respaldo** con la incidencia pre-rellenada usando la plantilla correcta. Abre el enlace en tu navegador para completar el envío manualmente.
+
 > Para el esquema completo de la API de servicios, incluyendo formatos de respuesta y ejemplos de uso desde el frontal, consulta [docs/services.md](docs/services.md).
 
 ## Servicios
