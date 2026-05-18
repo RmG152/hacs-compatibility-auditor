@@ -110,8 +110,7 @@ class GitHubClient:
                     )
                     if scopes and "public_repo" not in scopes and "repo" not in scopes:
                         _LOGGER.warning(
-                            "GitHub token lacks 'public_repo' scope — "
-                            "issue creation will likely fail. Got: %s",
+                            "GitHub token lacks 'public_repo' scope — issue creation will likely fail. Got: %s",
                             scopes,
                         )
                 else:

@@ -890,7 +890,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
         # API failed or no token — build fallback URL for manual creation
         fallback_url = self._github_client.build_issue_fallback_url(
-            owner, repo, title, body, template=template,
+            owner,
+            repo,
+            title,
+            body,
+            template=template,
         )
         return {
             "success": False,
@@ -901,8 +905,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             "template": template,
             "error": (
                 "Could not create issue via API. Use the fallback URL to create it manually."
-                if self._github_token else
-                "No GitHub token configured. Use the fallback URL to create the issue manually."
+                if self._github_token
+                else "No GitHub token configured. Use the fallback URL to create the issue manually."
             ),
         }
 
@@ -1064,7 +1068,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
         # API failed or no token — build fallback URL for manual creation
         fallback_url = self._github_client.build_issue_fallback_url(
-            owner, repo, title, body, template=template,
+            owner,
+            repo,
+            title,
+            body,
+            template=template,
         )
         return {
             "success": False,
@@ -1077,8 +1085,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             "action": resolved_action,
             "error": (
                 "Could not create issue via API. Use the fallback URL to create it manually."
-                if self._github_token else
-                "No GitHub token configured. Use the fallback URL to create the issue manually."
+                if self._github_token
+                else "No GitHub token configured. Use the fallback URL to create the issue manually."
             ),
         }
 
