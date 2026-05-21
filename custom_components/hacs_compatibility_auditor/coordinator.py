@@ -5,9 +5,9 @@ Supports batch processing to handle large HACS installations efficiently.
 """
 
 import asyncio
-import re
 from datetime import UTC, datetime as dt, timedelta
 import logging
+import re
 from typing import Any
 
 import aiohttp
@@ -22,6 +22,7 @@ from .ai_service import AIManager
 from .cache_manager import CacheManager
 from .compatibility import CompatibilityChecker, CompatibilityResult
 from .const import (
+    AI_CATEGORIES,
     CONF_AI_AUTO_ANALYZE,
     CONF_AI_ENABLED,
     CONF_AI_PROVIDERS,
@@ -52,7 +53,6 @@ from .const import (
     STATUS_INCOMPATIBLE,
     STATUS_UNKNOWN,
     STATUS_WARNING,
-    AI_CATEGORIES,
 )
 from .github_client import GitHubClient
 from .hacs_repository import HacsPackage, HacsRepositoryReader
@@ -73,7 +73,25 @@ def _sanitize_ai_text(text: str, max_len: int = 5000) -> str:
     # Remove HTML/script tags
     text = re.sub(r"<[^>]+>", "", text)
     # Escape markdown and GitHub-flavoured special characters
-    for ch in ("\\", "`", "*", "_", "{", "}", "[", "]", "(", ")", "#", "+", "-", ".", "!", "|", "~"):
+    for ch in (
+        "\\",
+        "`",
+        "*",
+        "_",
+        "{",
+        "}",
+        "[",
+        "]",
+        "(",
+        ")",
+        "#",
+        "+",
+        "-",
+        ".",
+        "!",
+        "|",
+        "~",
+    ):
         text = text.replace(ch, f"\\{ch}")
     return text[:max_len]
 
@@ -709,7 +727,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             if not cleaned:
                 return None
             return parse_version(cleaned)
-        except (InvalidVersion, ValueError):
+        except InvalidVersion, ValueError:
             return None
 
     @property
@@ -835,7 +853,10 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
             async with session.get(url, headers=headers) as resp:
                 if resp.status != 200:
-                    return {"success": False, "error": f"GitHub API returned {resp.status}"}
+                    return {
+                        "success": False,
+                        "error": f"GitHub API returned {resp.status}",
+                    }
                 issue_data = await resp.json()
 
             issue_title = issue_data.get("title", "")
@@ -870,15 +891,13 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
             self.async_set_updated_data(self._data.to_dict())
 
+        except (TimeoutError, aiohttp.ClientError, ValueError, KeyError) as exc:
+            return {"success": False, "error": str(exc)}
+        else:
             return {
                 "success": not result.error,
                 "result": result_dict,
             }
-
-        except (TimeoutError, aiohttp.ClientError, ValueError, KeyError) as exc:
-            return {"success": False, "error": str(exc)}
-        finally:
-            await session.close()
 
     async def async_report_to_rules(
         self,
@@ -924,7 +943,10 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         rules_repo = self._rules_repo
 
         if "/" not in rules_repo:
-            return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
+            return {
+                "success": False,
+                "error": f"Invalid rules repo format: {rules_repo}",
+            }
 
         owner, repo = rules_repo.split("/", 1)
 
@@ -987,80 +1009,35 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 else "No GitHub token configured. Use the fallback URL to create the issue manually."
             ),
         }
-        if action not in _ALLOWED_ACTIONS:
-            return {"success": False, "error": f"Invalid action: {action!r}. Allowed: {sorted(_ALLOWED_ACTIONS)}"}
-
-        title = f"[AI Report] {repository}#{issue_number} - {category}"
-        # Sanitize AI-generated text before embedding in GitHub issue body
-        safe_reasoning = _sanitize_ai_text(reasoning)
-        body = (
-            f"## AI Report: {category}\n\n"
-            f"- **Package**: `{repository}`\n"
-            f"- **Issue**: #{issue_number}\n"
-            f"- **Category**: `{category}`\n"
-            f"- **Action**: `{action}`\n\n"
-            f"### AI Reasoning\n\n{safe_reasoning}\n\n"
-            f"---\n*Reported automatically by HACS Compatibility Auditor*"
-        )
-
-        # Determine the correct issue template
-        template = "false_positive_report.yml" if action == "add_false_positive" else "blacklist_request.yml"
-        labels = [f"ai-{action}", f"ai-{category}"]
-        rules_repo = self._rules_repo
-
-        if "/" not in rules_repo:
-            return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
-
-        owner, repo = rules_repo.split("/", 1)
-
-        # Try API-based creation first
-        if self._github_token:
-            issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
-            if issue_data:
-                return {
-                    "success": True,
-                    "issue_url": issue_data.get("html_url", ""),
-                    "issue_number": issue_data.get("number", 0),
-                }
-
-        # API failed or no token — build fallback URL for manual creation
-        fallback_url = self._github_client.build_issue_fallback_url(
-            owner,
-            repo,
-            title,
-            body,
-            template=template,
-        )
-        return {
-            "success": False,
-            "fallback": True,
-            "fallback_url": fallback_url,
-            "fallback_title": title,
-            "fallback_body": body,
-            "template": template,
-            "error": (
-                "Could not create issue via API. Use the fallback URL to create it manually."
-                if self._github_token
-                else "No GitHub token configured. Use the fallback URL to create the issue manually."
-            ),
-        }
 
     async def async_analyze_all(
         self,
         provider_name: str | None = None,
+        use_cached_only: bool = False,
     ) -> dict[str, Any]:
-        """Run AI analysis on all packages not marked as compatible."""
+        """Run AI analysis on all packages not marked as compatible.
+
+        If *use_cached_only* is ``True``, the analysis is performed using only
+        the data already present in the local cache (no GitHub API calls are
+        made).  Results may be inaccurate when the cache is stale.
+        """
         if not self._ai_manager:
             return {"success": False, "error": "AI is not configured or enabled"}
         if not self._checker:
             return {"success": False, "error": "Compatibility checker not initialized"}
+
+        if use_cached_only:
+            _LOGGER.warning(
+                "Ai_analyze_all called with use_cached_only=True: analyzing with "
+                "potentially stale cached data. Results may be inaccurate"
+            )
 
         analyzed: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
 
         for i, result_dict in enumerate(self._data.results):
             status = result_dict.get("status", "")
-            if status == STATUS_COMPATIBLE or status == STATUS_IGNORED:
+            if status in (STATUS_COMPATIBLE, STATUS_IGNORED):
                 continue
 
             repository = result_dict.get("repository", "")
@@ -1073,22 +1050,45 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 continue
 
             try:
-                result = await self._checker.check_package(
-                    pkg,
-                    self._data.ha_current,
-                    self._data.ha_next,
-                )
-                fresh = result.to_dict()
-                issues = [
-                    {
-                        "title": i.get("title", ""),
-                        "url": i.get("url", ""),
-                        "labels": i.get("labels", []),
-                        "priority": i.get("priority", 0),
-                        "body": "",
-                    }
-                    for i in fresh.get("issues_relevant", [])
-                ]
+                if use_cached_only:
+                    # Use data from the existing result dict — no GitHub calls
+                    result = None  # We only need result_dict
+                    issues = [
+                        {
+                            "title": iss.get("title", ""),
+                            "url": iss.get("url", ""),
+                            "labels": iss.get("labels", []),
+                            "priority": iss.get("priority", 0),
+                            "body": "",
+                        }
+                        for iss in result_dict.get("issues_relevant", [])
+                    ]
+                    release_notes = result_dict.get("data", {}).get("matching_releases", [])
+                    manifest_ha = result_dict.get("manifest_ha_requirement", "")
+                    current_status = result_dict.get("status", "")
+                    reason = result_dict.get("reason", "")
+                else:
+                    # Fresh check from GitHub
+                    result = await self._checker.check_package(
+                        pkg,
+                        self._data.ha_current,
+                        self._data.ha_next,
+                    )
+                    fresh = result.to_dict()
+                    issues = [
+                        {
+                            "title": iss.get("title", ""),
+                            "url": iss.get("url", ""),
+                            "labels": iss.get("labels", []),
+                            "priority": iss.get("priority", 0),
+                            "body": "",
+                        }
+                        for iss in fresh.get("issues_relevant", [])
+                    ]
+                    release_notes = fresh.get("data", {}).get("matching_releases", [])
+                    manifest_ha = fresh.get("manifest_ha_requirement", "")
+                    current_status = fresh.get("status", "")
+                    reason = fresh.get("reason", "")
 
                 ai_result = await self._ai_manager.analyze_package(
                     package_name=pkg.name,
@@ -1096,12 +1096,12 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                     installed_version=pkg.installed_version or "",
                     ha_current=self._data.ha_current,
                     ha_next=self._data.ha_next,
-                    manifest_ha=result.manifest_ha_requirement,
-                    current_status=result.status,
+                    manifest_ha=manifest_ha,
+                    current_status=current_status,
                     issues=issues,
                     provider_name=provider_name,
-                    reason=result.reason,
-                    release_notes=result.data.get("matching_releases"),
+                    reason=reason,
+                    release_notes=release_notes,
                 )
 
                 self._data.results[i]["ai_analysis"] = ai_result.to_dict()
@@ -1112,14 +1112,16 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 analyzed.append(
                     {
                         "repository": repository,
-                        "status": result.status,
+                        "status": current_status,
                         "ai_result": ai_result.to_dict(),
                     }
                 )
-            except Exception as exc:
+            except (aiohttp.ClientError, TimeoutError, ValueError, KeyError) as exc:
                 _LOGGER.warning("AI analysis failed for %s: %s", repository, exc)
                 errors.append({"repository": repository, "error": str(exc)})
 
+        if self._cache_manager:
+            await self._cache_manager.async_save()
         self.async_set_updated_data(self._data.to_dict())
 
         return {
@@ -1136,14 +1138,13 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         repository: str,
         action: str | None = None,
     ) -> dict[str, Any]:
-        """Create a rules repo issue from stored AI analysis for a package.
+        """Generate a GitHub issue URL for reporting a package using stored AI analysis.
 
-        If the API-based creation fails (e.g., token lacks write permissions),
-        returns a fallback URL and body for manual issue creation.
+        Reads the AI analysis already stored in ``self._data.results`` for the
+        given *repository* and builds a ready-to-open GitHub issue URL with the
+        correct template parameters pre-filled.  No issue is created via the API
+        (to avoid requiring excessive GitHub permissions).
         """
-        if not self._github_client:
-            return {"success": False, "error": "GitHub client not initialized"}
-
         # Find stored result with AI analysis
         result_dict = None
         for r in self._data.results:
@@ -1152,11 +1153,17 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 break
 
         if not result_dict:
-            return {"success": False, "error": f"Package {repository} not found in results"}
+            return {
+                "success": False,
+                "error": f"Package {repository} not found in results",
+            }
 
         ai = result_dict.get("ai_analysis", {}) or {}
         if not ai or ai.get("error"):
-            return {"success": False, "error": f"No AI analysis available for {repository}"}
+            return {
+                "success": False,
+                "error": f"No AI analysis available for {repository}",
+            }
 
         verdict = ai.get("verdict", "uncertain")
         reasoning = ai.get("reasoning", "No reasoning provided")
@@ -1167,13 +1174,25 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         if not resolved_action:
             resolved_action = "add_false_positive" if verdict == "not_affected" else "report_incompatibility"
 
-        # Validate resolved action and category (verdict used as label prefix)
         if resolved_action not in _ALLOWED_ACTIONS:
             return {"success": False, "error": f"Invalid action: {resolved_action!r}"}
 
         safe_reasoning = _sanitize_ai_text(reasoning)
         safe_verdict = _sanitize_ai_text(verdict, max_len=100)
 
+        rules_repo = self._rules_repo
+        if "/" not in rules_repo:
+            return {
+                "success": False,
+                "error": f"Invalid rules repo format: {rules_repo}",
+            }
+
+        owner, repo = rules_repo.split("/", 1)
+
+        # Determine template
+        template = "false_positive_report.yml" if resolved_action == "add_false_positive" else "blacklist_request.yml"
+
+        # Build title/body for the issue form
         title = f"[AI Confirmed] {repository} - {verdict} ({confidence:.0%})"
         body = (
             f"## AI Confirmed Report\n\n"
@@ -1187,49 +1206,44 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             f"---\n*Confirmed via HACS Compatibility Auditor*"
         )
 
-        # Determine the correct issue template
-        template = "false_positive_report.yml" if resolved_action == "add_false_positive" else "blacklist_request.yml"
-        labels = [f"ai-{verdict}", "ai-confirmed"]
-        rules_repo = self._rules_repo
-        if "/" not in rules_repo:
-            return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
+        # Build template_params so GitHub issue form fields are auto-filled
+        template_params: dict[str, str] = {"repository": repository}
+        if template == "false_positive_report.yml":
+            # false_positive_report.yml fields: repository, issue_number, reason, evidence
+            # We don't have the original issue_number from stored data, use "N/A"
+            template_params["issue_number"] = "N/A"
+            template_params["reason"] = safe_reasoning
+            template_params["evidence"] = (
+                f"AI verdict: {safe_verdict} (confidence {confidence:.0%})\nProvider: {provider}\n\n{safe_reasoning}"
+            )
+        else:  # blacklist_request.yml
+            # blacklist_request.yml fields: repository, reason, evidence, ha_version
+            template_params["reason"] = safe_reasoning
+            template_params["evidence"] = (
+                f"AI verdict: {safe_verdict} (confidence {confidence:.0%})\nProvider: {provider}\n\n{safe_reasoning}"
+            )
+            template_params["ha_version"] = self._data.ha_current or ""
 
-        owner, repo = rules_repo.split("/", 1)
-
-        # Try API-based creation first
-        if self._github_token:
-            issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
-            if issue_data:
-                return {
-                    "success": True,
-                    "issue_url": issue_data.get("html_url", ""),
-                    "issue_number": issue_data.get("number", 0),
-                    "verdict": verdict,
-                    "action": resolved_action,
-                }
-
-        # API failed or no token — build fallback URL for manual creation
+        # Build the ready-to-open URL
         fallback_url = self._github_client.build_issue_fallback_url(
             owner,
             repo,
-            title,
-            body,
+            title=title,
+            body=body,
             template=template,
+            template_params=template_params,
         )
+
         return {
-            "success": False,
-            "fallback": True,
-            "fallback_url": fallback_url,
-            "fallback_title": title,
-            "fallback_body": body,
-            "template": template,
-            "verdict": verdict,
+            "success": True,
             "action": resolved_action,
-            "error": (
-                "Could not create issue via API. Use the fallback URL to create it manually."
-                if self._github_token
-                else "No GitHub token configured. Use the fallback URL to create the issue manually."
-            ),
+            "verdict": verdict,
+            "confidence": confidence,
+            "provider": provider,
+            "template": template,
+            "issue_url": fallback_url,
+            "title": title,
+            "body": body,
         }
 
     async def async_check_single_package(self, repository: str) -> dict[str, Any] | None:
@@ -1268,9 +1282,9 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         if not found:
             self._data.results.append(result_dict)
 
-        # Update cache
+        # Invalidate only THIS package in the cache so it is re-fetched next time
         if self._cache_manager:
-            self._cache_manager.set_entry(repository, result_dict, self._data.ha_current)
+            self._cache_manager.remove(repository)
             await self._cache_manager.async_save()
 
         self._recompute_stats()
@@ -1288,7 +1302,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         _LOGGER.warning(
             "Forcing full HACS compatibility re-check: clearing ALL cached data "
             "and re-analyzing every package from scratch. This may take a while "
-            "and will consume GitHub API quota."
+            "and will consume GitHub API quota"
         )
         self._force_refresh = True
         # Clear all caches to force fresh data

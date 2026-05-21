@@ -27,7 +27,7 @@
     "step": {
       "init": {
         "title": "HACS Compatibility Auditor Options",
-        "description": "Adjust audit settings. Community rules help reduce false positives by providing curated compatibility data.",
+        "description": "Adjust audit settings. Community rules help reduce false positives by providing curated compatibility data.{extra_warning}",
         "data": {
           "github_token": "GitHub token (optional)",
           "check_interval": "Check interval (hours)",
@@ -63,6 +63,13 @@
           "max_tokens": "Max tokens",
           "temperature": "Temperature"
         }
+      },
+      "ai_setup": {
+        "title": "Configure AI Analysis",
+        "description": "AI analysis can help you determine whether compatibility issues found by the algorithm are real. You can configure this now or later from the integration options.",
+        "data": {
+          "setup_ai": "Configure AI analysis now"
+        }
       }
     },
     "error": {
@@ -94,15 +101,15 @@
   "services": {
     "check_now": {
       "name": "Force check",
-      "description": "Forces an immediate re-check of all HACS package compatibility."
+      "description": "⚠️ Forces an immediate re-check of ALL HACS packages. Clears the entire cache and re-analyzes every package from scratch. May take several minutes and consumes GitHub API quota."
     },
     "check_package": {
       "name": "Check package",
-      "description": "Checks compatibility of a single HACS package by repository (format owner/repo).",
+      "description": "Checks compatibility of a single HACS package by selecting its sensor.",
       "fields": {
-        "repository": {
-          "name": "Repository",
-          "description": "Full repository name (e.g. 'home-assistant/core')"
+        "entity_id": {
+          "name": "HACS package",
+          "description": "Select the package sensor to check"
         }
       }
     },
@@ -110,13 +117,13 @@
       "name": "Analyze with AI",
       "description": "Uses an AI provider to analyze if a HACS package has real compatibility issues.",
       "fields": {
-        "repository": {
-          "name": "Repository",
-          "description": "Full repository name (e.g. 'owner/repo')"
+        "entity_id": {
+          "name": "HACS package",
+          "description": "Select the package sensor to analyze"
         },
         "provider": {
           "name": "AI Provider",
-          "description": "Name of the AI provider to use (optional, uses first configured)"
+          "description": "AI provider to use (auto = first configured)"
         }
       }
     },
@@ -134,13 +141,13 @@
         },
         "provider": {
           "name": "AI Provider",
-          "description": "Name of the AI provider to use (optional)"
+          "description": "AI provider to use (optional, uses first configured)"
         }
       }
     },
     "report_to_rules": {
       "name": "Report to rules repository",
-      "description": "Creates a GitHub issue on the community rules repository with AI analysis.",
+      "description": "Generates a URL to create a GitHub issue on the community rules repository with AI analysis. Form fields are auto-filled when the link is opened.",
       "fields": {
         "repository": {
           "name": "Repository",
@@ -166,15 +173,29 @@
     },
     "ai_confirm_report": {
       "name": "Confirm and report with AI",
-      "description": "Creates a GitHub issue on the rules repository using stored AI analysis for a package.",
+      "description": "Generates a URL to create a GitHub issue on the rules repository using stored AI analysis for a package. Form fields are auto-filled when the link is opened.",
       "fields": {
-        "repository": {
-          "name": "Repository",
-          "description": "Full repository name (e.g. 'owner/repo')"
+        "entity_id": {
+          "name": "HACS package",
+          "description": "Select the package sensor to confirm"
         },
         "action": {
           "name": "Action",
-          "description": "Action to take (optional, derived from verdict: not_affected->add_false_positive, affected->report_incompatibility)"
+          "description": "Action to take: add_false_positive or report_incompatibility (optional, derived from AI verdict if empty)"
+        }
+      }
+    },
+    "ai_analyze_all": {
+      "name": "Analyze all with AI",
+      "description": "Runs AI analysis on all packages that are not in compatible state.",
+      "fields": {
+        "provider": {
+          "name": "AI Provider",
+          "description": "AI provider to use (auto = first configured)"
+        },
+        "use_cached_only": {
+          "name": "Use cached data only",
+          "description": "If enabled, analyzes using only cached data without querying GitHub again. Results may be inaccurate if the cache is stale."
         }
       }
     }

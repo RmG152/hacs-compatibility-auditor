@@ -150,6 +150,11 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
         self._pending_options: dict[str, Any] = {}
         self._edit_provider: dict[str, Any] | None = None
 
+    def _init_pending_options(self) -> None:
+        """Initialize pending options if not already done."""
+        if not hasattr(self, "_pending_options"):
+            self._pending_options = {}
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
         errors: dict[str, str] = {}
@@ -232,6 +237,16 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
         current_options = self.config_entry.options
         current_data = self.config_entry.data
 
+        # Build warning message if AI is enabled but no providers configured
+        ai_enabled = current_options.get(CONF_AI_ENABLED, DEFAULT_AI_ENABLED)
+        ai_providers = current_options.get(CONF_AI_PROVIDERS, [])
+        description_extra = ""
+        if ai_enabled and not ai_providers:
+            description_extra = (
+                "\n\n⚠️ **AI analysis is enabled but no AI providers are configured. "
+                "Configure at least one provider to use AI features.**"
+            )
+
         data_schema = vol.Schema(
             {
                 vol.Optional(
@@ -293,6 +308,7 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=data_schema,
             errors=errors,
+            description_placeholders={"extra_warning": description_extra} if description_extra else None,
         )
 
     async def async_step_ai_providers(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -476,18 +492,15 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
                 if not valid:
                     errors["base"] = error or "cannot_connect"
                 else:
-                    return self.async_create_entry(
-                        title="HCA",
-                        data={
-                            CONF_GITHUB_TOKEN: token or "",
-                        },
-                        options={
-                            CONF_CHECK_INTERVAL: user_input.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL),
-                            CONF_CACHE_HOURS: user_input.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS),
-                            CONF_GITHUB_TIMEOUT: user_input.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT),
-                            CONF_GITHUB_RETRIES: user_input.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
-                        },
-                    )
+                    # Store validated options and ask about AI setup before creating entry
+                    self._pending_options = {
+                        CONF_GITHUB_TOKEN: token or "",
+                        CONF_CHECK_INTERVAL: user_input.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL),
+                        CONF_CACHE_HOURS: user_input.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS),
+                        CONF_GITHUB_TIMEOUT: user_input.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT),
+                        CONF_GITHUB_RETRIES: user_input.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
+                    }
+                    return await self.async_step_ai_setup()
 
         data_schema = vol.Schema(
             {
@@ -509,6 +522,36 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
             step_id="user",
             data_schema=data_schema,
             errors=errors,
+        )
+
+    async def async_step_ai_setup(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Ask the user whether to configure AI providers now."""
+        if user_input is not None:
+            if user_input.get("setup_ai", False):
+                # User wants to configure AI — go to provider management
+                return await self.async_step_ai_add_provider()
+            # User skipped AI — create entry with pending options
+            options = dict(self._pending_options)
+            options[CONF_AI_ENABLED] = user_input.get(CONF_AI_ENABLED, user_input.get("ai_enabled", DEFAULT_AI_ENABLED))
+            options[CONF_AI_AUTO_ANALYZE] = user_input.get(CONF_AI_AUTO_ANALYZE, DEFAULT_AI_AUTO_ANALYZE)
+            options[CONF_AI_PROVIDERS] = user_input.get(CONF_AI_PROVIDERS, [])
+            return self.async_create_entry(
+                title="HACS Compatibility Auditor",
+                data={
+                    CONF_GITHUB_TOKEN: options.get(CONF_GITHUB_TOKEN, ""),
+                },
+                options=options,
+            )
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional("setup_ai", default=False): bool,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="ai_setup",
+            data_schema=data_schema,
         )
 
     @staticmethod

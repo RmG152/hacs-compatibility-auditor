@@ -4,11 +4,11 @@ Supports OpenAI-compatible, Google Gemini, Anthropic Claude, and Ollama.
 Each provider translates between a generic prompt interface and its own API format.
 """
 
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import json
 import logging
+import re
 from typing import Any
 
 import aiohttp
@@ -66,7 +66,7 @@ class AIProviderConfig:
     temperature: float = DEFAULT_AI_TEMPERATURE
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AIProviderConfig":
+    def from_dict(cls, data: dict[str, Any]) -> AIProviderConfig:
         """Create config from a dict (as stored in config entry)."""
         provider_type = data.get(CONF_AI_PROVIDER_TYPE, PROVIDER_TYPE_OPENAI)
         return cls(
@@ -109,7 +109,6 @@ class AIAnalysisResult:
             "reasoning": self.reasoning,
             "confidence": self.confidence,
             "provider_used": self.provider_used,
-            "raw_response": self.raw_response,
             "error": self.error,
         }
 
@@ -133,7 +132,6 @@ class IssueCategoryResult:
             "reasoning": self.reasoning,
             "provider_used": self.provider_used,
             "error": self.error,
-            "raw_response": self.raw_response,
         }
 
 

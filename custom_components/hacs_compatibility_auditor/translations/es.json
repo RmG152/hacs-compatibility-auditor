@@ -11,13 +11,24 @@
           "github_timeout": "Timeout de consultas GitHub (segundos)",
           "github_retries": "Reintentos de consultas GitHub"
         }
+      },
+      "ai_setup": {
+        "title": "Configurar análisis con IA",
+        "description": "El análisis con IA puede ayudarte a determinar si los problemas de compatibilidad detectados por el algoritmo son reales. Puedes configurarlo ahora o más tarde desde las opciones de la integración.",
+        "data": {
+          "setup_ai": "Configurar análisis con IA ahora"
+        }
       }
     },
     "error": {
       "cannot_connect": "No se pudo conectar a la API de GitHub",
       "invalid_token": "Token de GitHub inválido",
       "hacs_not_found": "HACS no está instalado o no se pudo acceder a sus datos",
-      "invalid_repo_format": "El repositorio debe tener el formato 'owner/repo'"
+      "invalid_repo_format": "El repositorio debe tener el formato 'owner/repo'",
+      "provider_name_required": "El nombre del proveedor es obligatorio",
+      "provider_model_required": "El nombre del modelo es obligatorio",
+      "provider_url_required": "La URL base es obligatoria",
+      "provider_key_required": "La API key es obligatoria para este tipo de proveedor"
     },
     "abort": {
       "already_configured": "La integración ya está configurada"
@@ -27,7 +38,7 @@
     "step": {
       "init": {
         "title": "Opciones de HACS Compatibility Auditor",
-        "description": "Ajusta la configuración de auditoría.",
+        "description": "Ajusta la configuración de auditoría.{extra_warning}",
         "data": {
           "github_token": "Token de GitHub (opcional)",
           "check_interval": "Intervalo de comprobación (horas)",
@@ -64,12 +75,6 @@
           "temperature": "Temperatura"
         }
       }
-    },
-    "error": {
-      "provider_name_required": "El nombre del proveedor es obligatorio",
-      "provider_model_required": "El nombre del modelo es obligatorio",
-      "provider_url_required": "La URL base es obligatoria",
-      "provider_key_required": "La API key es obligatoria para este tipo de proveedor"
     }
   },
   "entity": {
@@ -94,15 +99,15 @@
   "services": {
     "check_now": {
       "name": "Forzar comprobación",
-      "description": "Fuerza una re-comprobación inmediata de la compatibilidad de todos los paquetes HACS."
+      "description": "⚠️ Fuerza una re-comprobación inmediata de TODOS los paquetes HACS. Elimina toda la información en caché y re-analiza todas las entidades desde cero. Puede tardar varios minutos y consume cuota de la API de GitHub."
     },
     "check_package": {
       "name": "Comprobar paquete",
-      "description": "Comprueba la compatibilidad de un paquete HACS específico por repositorio (formato owner/repo).",
+      "description": "Comprueba la compatibilidad de un paquete HACS específico seleccionando su sensor.",
       "fields": {
-        "repository": {
-          "name": "Repositorio",
-          "description": "Nombre completo del repositorio (ej. 'home-assistant/core')"
+        "entity_id": {
+          "name": "Paquete HACS",
+          "description": "Selecciona el sensor del paquete que quieres comprobar"
         }
       }
     },
@@ -110,13 +115,13 @@
       "name": "Analizar con IA",
       "description": "Utiliza un proveedor de IA para analizar si un paquete HACS tiene problemas reales de compatibilidad.",
       "fields": {
-        "repository": {
-          "name": "Repositorio",
-          "description": "Nombre completo del repositorio (ej. 'owner/repo')"
+        "entity_id": {
+          "name": "Paquete HACS",
+          "description": "Selecciona el sensor del paquete que quieres analizar"
         },
         "provider": {
           "name": "Proveedor IA",
-          "description": "Nombre del proveedor de IA a utilizar (opcional, usa el primero configurado)"
+          "description": "Proveedor de IA a utilizar (auto = primer proveedor configurado)"
         }
       }
     },
@@ -134,13 +139,13 @@
         },
         "provider": {
           "name": "Proveedor IA",
-          "description": "Nombre del proveedor de IA a utilizar (opcional)"
+          "description": "Proveedor de IA a utilizar (opcional, usa el primero configurado)"
         }
       }
     },
     "report_to_rules": {
       "name": "Reportar a reglas comunitarias",
-      "description": "Crea una incidencia en el repositorio de reglas comunitarias con el análisis de IA.",
+      "description": "Genera una URL para crear una incidencia en el repositorio de reglas comunitarias con el análisis de IA. Los campos de la plantilla se rellenan automáticamente al abrir el enlace.",
       "fields": {
         "repository": {
           "name": "Repositorio",
@@ -166,15 +171,29 @@
     },
     "ai_confirm_report": {
       "name": "Confirmar y reportar con IA",
-      "description": "Crea una incidencia en el repositorio de reglas usando el análisis de IA almacenado para un paquete.",
+      "description": "Genera una URL para crear una incidencia en el repositorio de reglas usando el análisis de IA almacenado para un paquete. Los campos de la plantilla se rellenan automáticamente al abrir el enlace.",
       "fields": {
-        "repository": {
-          "name": "Repositorio",
-          "description": "Nombre completo del repositorio (ej. 'owner/repo')"
+        "entity_id": {
+          "name": "Paquete HACS",
+          "description": "Selecciona el sensor del paquete del que quieres confirmar el reporte"
         },
         "action": {
           "name": "Acción",
-          "description": "Acción a tomar (opcional, se deriva del veredicto: not_affected->add_false_positive, affected->report_incompatibility)"
+          "description": "Acción a tomar: add_false_positive o report_incompatibility (opcional, se deriva del veredicto de la IA si se deja vacío)"
+        }
+      }
+    },
+    "ai_analyze_all": {
+      "name": "Analizar todo con IA",
+      "description": "Ejecuta análisis con IA sobre todos los paquetes que no estén en estado compatible.",
+      "fields": {
+        "provider": {
+          "name": "Proveedor IA",
+          "description": "Proveedor de IA a utilizar (auto = primer proveedor configurado)"
+        },
+        "use_cached_only": {
+          "name": "Usar solo caché",
+          "description": "Si se activa, analiza solo con la información en caché sin volver a consultar a GitHub. El resultado podría ser inexacto si la caché está obsoleta."
         }
       }
     }
