@@ -196,8 +196,8 @@ class TestVersionRequirements:
         assert CompatibilityChecker._check_version_requirement("2024.6.0dev0", "2024.1.0")
 
     def test_invalid_requirement_version(self):
-        """Test that invalid requirement versions default to compatible."""
-        assert CompatibilityChecker._check_version_requirement("2024.6.0", "not-a-version")
+        """Test that invalid requirement versions are treated as incompatible (fail-secure)."""
+        assert not CompatibilityChecker._check_version_requirement("2024.6.0", "not-a-version")
 
     def test_compatible_release_operator(self):
         """Test ~= (compatible release) operator."""

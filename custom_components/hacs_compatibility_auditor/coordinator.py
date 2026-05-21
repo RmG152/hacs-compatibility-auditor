@@ -5,9 +5,9 @@ Supports batch processing to handle large HACS installations efficiently.
 """
 
 import asyncio
+import re
 from datetime import UTC, datetime as dt, timedelta
 import logging
-import re
 from typing import Any
 
 import aiohttp
@@ -52,6 +52,7 @@ from .const import (
     STATUS_INCOMPATIBLE,
     STATUS_UNKNOWN,
     STATUS_WARNING,
+    AI_CATEGORIES,
 )
 from .github_client import GitHubClient
 from .hacs_repository import HacsPackage, HacsRepositoryReader
@@ -61,6 +62,39 @@ _LOGGER = logging.getLogger(__name__)
 
 # Minimum interval between automatic scans (seconds)
 _UPDATE_MIN_INTERVAL = 300
+
+# Allowed values for report action and category (prevent label injection)
+_ALLOWED_CATEGORIES: set[str] = set(AI_CATEGORIES)
+_ALLOWED_ACTIONS: set[str] = {"add_false_positive", "report_incompatibility"}
+
+
+def _sanitize_ai_text(text: str, max_len: int = 5000) -> str:
+    """Strip HTML tags and escape markdown special chars from AI-generated text."""
+    # Remove HTML/script tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Escape markdown and GitHub-flavoured special characters
+    for ch in ("\\", "`", "*", "_", "{", "}", "[", "]", "(", ")", "#", "+", "-", ".", "!", "|", "~"):
+        text = text.replace(ch, f"\\{ch}")
+    return text[:max_len]
+
+
+def _validate_repo_format(repository: str) -> tuple[bool, str | None]:
+    """Validate repository format to prevent injection attacks."""
+    if not repository or "/" not in repository:
+        return False, "Invalid repository format"
+    parts = repository.split("/")
+    if len(parts) != 2:
+        return False, "Invalid repository format"
+    owner, repo = parts
+    # Validate owner/repo format (alphanumeric, hyphens, underscores, dots)
+    # GitHub allows 1-39 characters for owner, 1-100 for repo
+    owner_pattern = r"^[a-zA-Z0-9][a-zA-Z0-9\-_]{0,38}[a-zA-Z0-9]$"
+    repo_pattern = r"^[a-zA-Z0-9][a-zA-Z0-9\-_.]{0,98}[a-zA-Z0-9]$"
+    if not re.match(owner_pattern, owner):
+        return False, "Invalid owner format"
+    if not re.match(repo_pattern, repo):
+        return False, "Invalid repo format"
+    return True, None
 
 
 class HacsCompatibilityData:
@@ -705,6 +739,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         if not self._checker:
             return {"success": False, "error": "Compatibility checker not initialized"}
 
+        # Validate repository format to prevent injection
+        valid, error = _validate_repo_format(repository)
+        if not valid:
+            return {"success": False, "error": error}
+
         # Find the package
         pkg = None
         for p in self._data.packages:
@@ -780,11 +819,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         if not self._github_client:
             return {"success": False, "error": "GitHub client not initialized"}
 
-        # Parse owner/repo
-        parts = repository.split("/")
-        if len(parts) != 2:
-            return {"success": False, "error": f"Invalid repository format: {repository}"}
-        owner, repo = parts
+        # Validate repository format to prevent injection
+        valid, error = _validate_repo_format(repository)
+        if not valid:
+            return {"success": False, "error": error}
+        owner, repo = repository.split("/")
 
         try:
             # Fetch the specific issue from GitHub
@@ -849,14 +888,59 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         reasoning: str,
         action: str,
     ) -> dict[str, Any]:
-        """Create a GitHub issue on the rules repository about a finding.
+        """Generate a GitHub issue URL for reporting to the rules repository.
 
-        If the API-based creation fails (e.g., token lacks write permissions),
-        returns a fallback URL and body for manual issue creation.
+        Always returns a ready-to-open fallback URL with the correct template
+        parameters so GitHub auto-fills the issue form fields.  If a GitHub
+        token with write permissions is configured, it also attempts to create
+        the issue via the API.
         """
         if not self._github_client:
             return {"success": False, "error": "GitHub client not initialized"}
 
+        # Validate repository format to prevent injection
+        valid, error = _validate_repo_format(repository)
+        if not valid:
+            return {"success": False, "error": error}
+
+        # Validate category and action against explicit allowlists
+        if category not in _ALLOWED_CATEGORIES:
+            return {
+                "success": False,
+                "error": f"Invalid category: {category!r}. Allowed: {sorted(_ALLOWED_CATEGORIES)}",
+            }
+        if action not in _ALLOWED_ACTIONS:
+            return {
+                "success": False,
+                "error": f"Invalid action: {action!r}. Allowed: {sorted(_ALLOWED_ACTIONS)}",
+            }
+
+        # Sanitize AI-generated text before embedding
+        safe_reasoning = _sanitize_ai_text(reasoning)
+
+        # Determine the correct issue template
+        template = "false_positive_report.yml" if action == "add_false_positive" else "blacklist_request.yml"
+        labels = [f"ai-{action}", f"ai-{category}"]
+        rules_repo = self._rules_repo
+
+        if "/" not in rules_repo:
+            return {"success": False, "error": f"Invalid rules repo format: {rules_repo}"}
+
+        owner, repo = rules_repo.split("/", 1)
+
+        # Build template_params so GitHub issue form fields are auto-filled
+        template_params: dict[str, str] = {"repository": repository}
+        if template == "false_positive_report.yml":
+            template_params["issue_number"] = str(issue_number)
+            template_params["reason"] = safe_reasoning
+            # Map reasoning → evidence placeholder when evidence is not separately available
+            template_params["evidence"] = safe_reasoning
+        else:  # blacklist_request.yml
+            template_params["reason"] = safe_reasoning
+            template_params["evidence"] = safe_reasoning
+            template_params["ha_version"] = self._data.ha_current or ""
+
+        # Build title for API creation
         title = f"[AI Report] {repository}#{issue_number} - {category}"
         body = (
             f"## AI Report: {category}\n\n"
@@ -864,7 +948,58 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             f"- **Issue**: #{issue_number}\n"
             f"- **Category**: `{category}`\n"
             f"- **Action**: `{action}`\n\n"
-            f"### AI Reasoning\n\n{reasoning}\n\n"
+            f"### AI Reasoning\n\n{safe_reasoning}\n\n"
+            f"---\n*Reported automatically by HACS Compatibility Auditor*"
+        )
+
+        # Try API-based creation first
+        issue_url = ""
+        if self._github_token:
+            issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
+            if issue_data:
+                issue_url = issue_data.get("html_url", "")
+
+        if issue_url:
+            return {
+                "success": True,
+                "issue_url": issue_url,
+                "issue_number": issue_data.get("number", 0),
+            }
+
+        # API failed or no token — build fallback URL with correct template params
+        fallback_url = self._github_client.build_issue_fallback_url(
+            owner,
+            repo,
+            title=title,
+            body=body,
+            template=template,
+            template_params=template_params,
+        )
+        return {
+            "success": False,
+            "fallback": True,
+            "fallback_url": fallback_url,
+            "fallback_title": title,
+            "template": template,
+            "error": (
+                "Could not create issue via API. Use the fallback URL to create it manually."
+                if self._github_token
+                else "No GitHub token configured. Use the fallback URL to create the issue manually."
+            ),
+        }
+        if action not in _ALLOWED_ACTIONS:
+            return {"success": False, "error": f"Invalid action: {action!r}. Allowed: {sorted(_ALLOWED_ACTIONS)}"}
+
+        title = f"[AI Report] {repository}#{issue_number} - {category}"
+        # Sanitize AI-generated text before embedding in GitHub issue body
+        safe_reasoning = _sanitize_ai_text(reasoning)
+        body = (
+            f"## AI Report: {category}\n\n"
+            f"- **Package**: `{repository}`\n"
+            f"- **Issue**: #{issue_number}\n"
+            f"- **Category**: `{category}`\n"
+            f"- **Action**: `{action}`\n\n"
+            f"### AI Reasoning\n\n{safe_reasoning}\n\n"
             f"---\n*Reported automatically by HACS Compatibility Auditor*"
         )
 
@@ -1032,15 +1167,22 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         if not resolved_action:
             resolved_action = "add_false_positive" if verdict == "not_affected" else "report_incompatibility"
 
+        # Validate resolved action and category (verdict used as label prefix)
+        if resolved_action not in _ALLOWED_ACTIONS:
+            return {"success": False, "error": f"Invalid action: {resolved_action!r}"}
+
+        safe_reasoning = _sanitize_ai_text(reasoning)
+        safe_verdict = _sanitize_ai_text(verdict, max_len=100)
+
         title = f"[AI Confirmed] {repository} - {verdict} ({confidence:.0%})"
         body = (
             f"## AI Confirmed Report\n\n"
             f"- **Package**: `{repository}`\n"
-            f"- **Verdict**: `{verdict}`\n"
+            f"- **Verdict**: `{safe_verdict}`\n"
             f"- **Confidence**: {confidence:.0%}\n"
             f"- **AI Provider**: {provider}\n"
             f"- **Action**: `{resolved_action}`\n\n"
-            f"### AI Reasoning\n\n{reasoning}\n\n"
+            f"### AI Reasoning\n\n{safe_reasoning}\n\n"
             f"### Algorithm Status\n\n{result_dict.get('reason', 'N/A')}\n\n"
             f"---\n*Confirmed via HACS Compatibility Auditor*"
         )
@@ -1143,7 +1285,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
     async def async_force_check(self) -> None:
         """Force an immediate re-check, bypassing rate limit."""
-        _LOGGER.info("Forcing HACS compatibility re-check")
+        _LOGGER.warning(
+            "Forcing full HACS compatibility re-check: clearing ALL cached data "
+            "and re-analyzing every package from scratch. This may take a while "
+            "and will consume GitHub API quota."
+        )
         self._force_refresh = True
         # Clear all caches to force fresh data
         if self._github_client:

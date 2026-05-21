@@ -29,6 +29,9 @@ from .const import (
     SERVICE_CHECK_NOW,
     SERVICE_CHECK_PACKAGE,
     SERVICE_REPORT_TO_RULES,
+    AI_CATEGORIES,
+    AI_CATEGORY_FALSE_POSITIVE as AI_CATEGORY_FALSE_POSITIVE,
+    AI_CATEGORY_TRUE_POSITIVE as AI_CATEGORY_TRUE_POSITIVE,
 )
 from .coordinator import HacsCompatibilityCoordinator
 
@@ -67,7 +70,7 @@ SERVICE_REPORT_TO_RULES_SCHEMA = vol.Schema(
     {
         vol.Required("repository"): cv.string,
         vol.Required("issue_number"): vol.All(int, vol.Range(min=1)),
-        vol.Required("category"): cv.string,
+        vol.Required("category"): vol.In(AI_CATEGORIES),
         vol.Required("reasoning"): cv.string,
         vol.Required("action"): cv.string,
     }
@@ -82,7 +85,9 @@ SERVICE_AI_ANALYZE_ALL_SCHEMA = vol.Schema(
 SERVICE_AI_CONFIRM_REPORT_SCHEMA = vol.Schema(
     {
         vol.Required("repository"): cv.string,
-        vol.Optional("action"): cv.string,
+        vol.Optional("action", default="report_incompatibility"): vol.In(
+            {"add_false_positive", "report_incompatibility"}
+        ),
     }
 )
 

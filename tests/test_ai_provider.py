@@ -16,6 +16,7 @@ from custom_components.hacs_compatibility_auditor.ai_provider import (
     create_provider,
 )
 from custom_components.hacs_compatibility_auditor.const import (
+    CONF_AI_API_KEY,
     DEFAULT_PROVIDER_MODELS,
     DEFAULT_PROVIDER_URLS,
     PROVIDER_TYPE_ANTHROPIC,
@@ -73,7 +74,8 @@ class TestAIProviderConfig:
         assert config.base_url == DEFAULT_PROVIDER_URLS[PROVIDER_TYPE_OLLAMA]
         assert config.model == DEFAULT_PROVIDER_MODELS[PROVIDER_TYPE_OLLAMA]
 
-    def test_to_dict_round_trip(self):
+    def test_to_dict_excludes_api_key(self):
+        """to_dict() must never serialise api_key (security: no secrets in logs/cache)."""
         original = AIProviderConfig(
             provider_type=PROVIDER_TYPE_GEMINI,
             name="Gemini Test",
@@ -84,10 +86,12 @@ class TestAIProviderConfig:
             temperature=0.2,
         )
         d = original.to_dict()
+        # api_key must NOT appear in serialised output
+        assert CONF_AI_API_KEY not in d
+        # Non-secret fields must still round-trip correctly
         restored = AIProviderConfig.from_dict(d)
         assert restored.provider_type == original.provider_type
         assert restored.name == original.name
-        assert restored.api_key == original.api_key
         assert restored.base_url == original.base_url
         assert restored.model == original.model
         assert restored.max_tokens == original.max_tokens

@@ -1,7 +1,10 @@
 """Config flow for HACS Compatibility Auditor integration."""
 
+import ipaddress
 import logging
+import re
 from typing import Any
+import urllib.parse
 
 import aiohttp
 import voluptuous as vol
@@ -83,6 +86,58 @@ async def _validate_hacs(hass: HomeAssistant) -> bool:
 
     except ImportError:
         return False
+
+
+def _is_safe_url(url: str, provider_type: str) -> tuple[bool, str | None]:
+    """Validate that base_url uses https and does not target private/reserved IPs.
+
+    Ollama is commonly run on LAN/Local networks — allow private and link-local IPs
+    as well as localhost for Ollama.  All other providers must use https and must
+    not resolve to private/reserved addresses.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url if "://" in url else f"https://{url}")
+    except ValueError:
+        return False, "invalid_url_format"
+
+    hostname = parsed.hostname or ""
+    if not hostname:
+        return False, "missing_hostname"
+
+    # Validate hostname format to prevent injection
+    # Allow alphanumeric, hyphens, dots, and underscores
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-_.]*[a-zA-Z0-9]$", hostname):
+        return False, "invalid_hostname_format"
+
+    # Block suspicious hostnames
+    if hostname in ("localhost", "127.0.0.1", "::1"):
+        if provider_type != PROVIDER_TYPE_OLLAMA:
+            return False, "localhost_not_allowed"
+
+    # Ollama: allow localhost, private IPs, link-local, and plain hostnames (LAN)
+    if provider_type == PROVIDER_TYPE_OLLAMA:
+        try:
+            addr = ipaddress.ip_address(hostname)
+            # Block only truly reserved ranges; allow private and link-local
+            if addr.is_reserved and not (addr.is_private or addr.is_link_local):
+                return False, "ollama_reserved_ip_not_allowed"
+        except ValueError:
+            pass  # hostname is a domain name (e.g. ollama.local) — allow
+        return True, None
+
+    # Non-Ollama providers: require HTTPS
+    if parsed.scheme != "https":
+        return False, "https_required"
+
+    # Block private / reserved / loopback / link-local IPs for cloud providers
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_reserved or addr.is_loopback or addr.is_link_local:
+            return False, "private_ip_not_allowed"
+    except ValueError:
+        pass  # hostname is a domain name, not an IP — allow
+
+    return True, None
 
 
 class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
@@ -336,21 +391,26 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                     CONF_AI_TEMPERATURE: temperature,
                 }
 
-                current_providers = list(self.config_entry.options.get(CONF_AI_PROVIDERS, []))
-
-                if edit_mode:
-                    old_name = self._edit_provider.get(CONF_AI_PROVIDER_NAME)
-                    for i, p in enumerate(current_providers):
-                        if p.get(CONF_AI_PROVIDER_NAME) == old_name:
-                            current_providers[i] = provider_config
-                            break
-                    self._edit_provider = None
+                # Validate base_url to prevent SSRF
+                url_ok, url_err = _is_safe_url(base_url, provider_type)
+                if not url_ok:
+                    errors["base"] = url_err or "invalid_url"
                 else:
-                    current_providers.append(provider_config)
+                    current_providers = list(self.config_entry.options.get(CONF_AI_PROVIDERS, []))
 
-                options = dict(self._pending_options) if hasattr(self, "_pending_options") else {}
-                options[CONF_AI_PROVIDERS] = current_providers
-                return self.async_create_entry(title="", data=options)
+                    if edit_mode:
+                        old_name = self._edit_provider.get(CONF_AI_PROVIDER_NAME)
+                        for i, p in enumerate(current_providers):
+                            if p.get(CONF_AI_PROVIDER_NAME) == old_name:
+                                current_providers[i] = provider_config
+                                break
+                        self._edit_provider = None
+                    else:
+                        current_providers.append(provider_config)
+
+                    options = dict(self._pending_options) if hasattr(self, "_pending_options") else {}
+                    options[CONF_AI_PROVIDERS] = current_providers
+                    return self.async_create_entry(title="", data=options)
 
         # Determine defaults based on edit mode or new provider
         provider_type_default = defaults.get(CONF_AI_PROVIDER_TYPE, PROVIDER_TYPE_OPENAI)
