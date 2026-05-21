@@ -236,6 +236,71 @@ class TestBreakingKeywords:
         """Test case-insensitive matching."""
         assert CompatibilityChecker._contains_breaking_keywords("BREAKING CHANGE: something changed")
 
+    def test_contains_end_of_life(self):
+        """Test detection of 'end of life' keyword."""
+        assert CompatibilityChecker._contains_breaking_keywords("END OF LIFE Latest")
+        assert CompatibilityChecker._contains_breaking_keywords("This project is end of life")
+
+    def test_contains_use_this_instead(self):
+        """Test detection of 'use this instead' keyword."""
+        assert CompatibilityChecker._contains_breaking_keywords("USE THIS INSTEAD")
+        assert CompatibilityChecker._contains_breaking_keywords("use this instead of")
+
+    def test_contains_merged_into(self):
+        """Test detection of 'merged into' keyword."""
+        assert CompatibilityChecker._contains_breaking_keywords("merged into weather-heatmap")
+
+
+# --- Deprecation Keyword Detection Tests ---
+
+
+class TestDeprecationKeywords:
+    """Tests for deprecation keyword detection."""
+
+    def test_contains_deprecated(self):
+        """Test detection of 'deprecated' keyword."""
+        assert CompatibilityChecker._contains_deprecation_keywords("This card has been deprecated")
+        assert CompatibilityChecker._contains_deprecation_keywords("deprecated card")
+
+    def test_contains_end_of_life(self):
+        """Test detection of 'end of life' keyword."""
+        assert CompatibilityChecker._contains_deprecation_keywords("END OF LIFE Latest")
+        assert CompatibilityChecker._contains_deprecation_keywords("This project is end of life")
+
+    def test_contains_use_this_instead(self):
+        """Test detection of 'use this instead' keyword."""
+        assert CompatibilityChecker._contains_deprecation_keywords("USE THIS INSTEAD")
+        assert CompatibilityChecker._contains_deprecation_keywords("use this instead of")
+
+    def test_contains_merged_into(self):
+        """Test detection of 'merged into' keyword."""
+        assert CompatibilityChecker._contains_deprecation_keywords("merged into weather-heatmap")
+
+    def test_contains_migrated_to(self):
+        """Test detection of 'migrated to' keyword."""
+        assert CompatibilityChecker._contains_deprecation_keywords("migrated to new-card")
+
+    def test_contains_has_been_deprecated(self):
+        """Test detection of 'has been deprecated' phrase."""
+        assert CompatibilityChecker._contains_deprecation_keywords("This card has been deprecated")
+
+    def test_contains_please_use(self):
+        """Test detection of 'please use' keyword."""
+        assert CompatibilityChecker._contains_deprecation_keywords("please use new-card instead")
+
+    def test_no_deprecation_keywords(self):
+        """Test that normal text doesn't trigger."""
+        assert not CompatibilityChecker._contains_deprecation_keywords("Bug fix and improvements")
+
+    def test_empty_text(self):
+        """Test that empty text returns False."""
+        assert not CompatibilityChecker._contains_deprecation_keywords("")
+        assert not CompatibilityChecker._contains_deprecation_keywords(None)
+
+    def test_case_insensitive(self):
+        """Test case-insensitive matching."""
+        assert CompatibilityChecker._contains_deprecation_keywords("END OF LIFE")
+
 
 # --- Compatibility Check Tests ---
 
@@ -388,6 +453,66 @@ class TestCompatibilityCheck:
         )
 
         assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_package_with_deprecated_release_notes(self, checker, mock_github_client, sample_package):
+        """Test a package with deprecation indicators in release notes.
+
+        This tests the case like sxdjt/ha-windspeed-heatmap that says
+        'END OF LIFE', 'This card has been deprecated', 'USE THIS INSTEAD'.
+        """
+        mock_github_client.get_manifest.return_value = GitHubManifest(
+            name="Windspeed Heatmap",
+            version="1.0.0",
+            homeassistant="2024.1.0",
+        )
+        mock_github_client.get_releases.return_value = [
+            GitHubRelease(
+                tag_name="v1.0.0",
+                name="1.0.0",
+                published_at="2024-06-01T00:00:00Z",
+                prerelease=False,
+                html_url="https://github.com/sxdjt/ha-windspeed-heatmap/releases/tag/v1.0.0",
+                body="""END OF LIFE Latest
+                IMPORTANT!! This card has been deprecated.
+                The temperature and windspeed heatmap cards have always shared most of their code,
+                with just small differences between them. Rather than keep maintaining two nearly-identical
+                cards, I've merged them into one: weather-heatmap. Same functionality, less clutter
+                in your dashboard setup.
+                USE THIS INSTEAD""",
+            )
+        ]
+        mock_github_client.get_issues.return_value = []
+
+        result = await checker.check_package(sample_package, ha_current="2024.6.0", ha_next="2024.7.0")
+
+        # Deprecated packages should be marked as INCOMPATIBLE
+        assert result.status == STATUS_INCOMPATIBLE
+        assert result.compatible_with_current is False
+        assert result.compatible_with_next is False
+        assert "deprecated" in result.reason.lower() or "end of life" in result.reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_deprecated_release_marks_incompatible_not_warning(self, checker, mock_github_client, sample_package):
+        """Test that deprecation marks a package as incompatible, not just warning."""
+        mock_github_client.get_manifest.return_value = None
+        mock_github_client.get_releases.return_value = [
+            GitHubRelease(
+                tag_name="v2.0.0",
+                name="2.0.0",
+                published_at="2024-06-01T00:00:00Z",
+                prerelease=False,
+                html_url="https://github.com/example/repo/releases/tag/v2.0.0",
+                body="This project has been deprecated. Please use new-project instead.",
+            )
+        ]
+        mock_github_client.get_issues.return_value = []
+
+        result = await checker.check_package(sample_package, ha_current="2024.6.0")
+
+        # Deprecation should trigger INCOMPATIBLE, not WARNING
+        assert result.status == STATUS_INCOMPATIBLE
+        assert result.compatible_with_current is False
 
 
 # --- Result Serialization Tests ---
