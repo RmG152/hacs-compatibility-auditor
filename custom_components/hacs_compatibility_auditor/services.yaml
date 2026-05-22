@@ -141,6 +141,14 @@ ai_confirm_report:
         entity:
           domain: sensor
           integration: hacs_compatibility_auditor
+    issue_number:
+      name: Número de incidencia
+      description: Número de la incidencia en GitHub (requerido para plantilla false_positive_report)
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 1
     action:
       name: Acción
       description: "Acción a tomar: add_false_positive o report_incompatibility (opcional, se deriva del veredicto de la IA si se deja vacío)"

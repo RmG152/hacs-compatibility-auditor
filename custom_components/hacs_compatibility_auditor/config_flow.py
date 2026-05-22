@@ -308,7 +308,7 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=data_schema,
             errors=errors,
-            description_placeholders={"extra_warning": description_extra} if description_extra else None,
+            description_placeholders={"extra_warning": description_extra or ""},
         )
 
     async def async_step_ai_providers(self, user_input: dict[str, Any] | None = None) -> FlowResult:

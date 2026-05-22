@@ -66,7 +66,7 @@ class AIProviderConfig:
     temperature: float = DEFAULT_AI_TEMPERATURE
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> AIProviderConfig:
+    def from_dict(cls, data: dict[str, Any]) -> "AIProviderConfig":
         """Create config from a dict (as stored in config entry)."""
         provider_type = data.get(CONF_AI_PROVIDER_TYPE, PROVIDER_TYPE_OPENAI)
         return cls(

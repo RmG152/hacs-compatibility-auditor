@@ -727,7 +727,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             if not cleaned:
                 return None
             return parse_version(cleaned)
-        except InvalidVersion, ValueError:
+        except (InvalidVersion, ValueError):
             return None
 
     @property
@@ -806,6 +806,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         )
 
         ai_dict = ai_result.to_dict()
+        ai_dict["repository"] = pkg.full_name
 
         # Store AI result back into the result list so sensors update
         for i, r in enumerate(self._data.results):
@@ -939,7 +940,6 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
 
         # Determine the correct issue template
         template = "false_positive_report.yml" if action == "add_false_positive" else "blacklist_request.yml"
-        labels = [f"ai-{action}", f"ai-{category}"]
         rules_repo = self._rules_repo
 
         if "/" not in rules_repo:
@@ -974,21 +974,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             f"---\n*Reported automatically by HACS Compatibility Auditor*"
         )
 
-        # Try API-based creation first
-        issue_url = ""
-        if self._github_token:
-            issue_data = await self._github_client.create_issue(owner, repo, title, body, labels)
-            if issue_data:
-                issue_url = issue_data.get("html_url", "")
-
-        if issue_url:
-            return {
-                "success": True,
-                "issue_url": issue_url,
-                "issue_number": issue_data.get("number", 0),
-            }
-
-        # API failed or no token — build fallback URL with correct template params
+        # Build fallback URL with correct template params (no API attempt)
         fallback_url = self._github_client.build_issue_fallback_url(
             owner,
             repo,
@@ -998,16 +984,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             template_params=template_params,
         )
         return {
-            "success": False,
+            "success": True,
             "fallback": True,
             "fallback_url": fallback_url,
             "fallback_title": title,
             "template": template,
-            "error": (
-                "Could not create issue via API. Use the fallback URL to create it manually."
-                if self._github_token
-                else "No GitHub token configured. Use the fallback URL to create the issue manually."
-            ),
         }
 
     async def async_analyze_all(
@@ -1137,6 +1118,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         self,
         repository: str,
         action: str | None = None,
+        issue_number: int | None = None,
     ) -> dict[str, Any]:
         """Generate a GitHub issue URL for reporting a package using stored AI analysis.
 
@@ -1210,8 +1192,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         template_params: dict[str, str] = {"repository": repository}
         if template == "false_positive_report.yml":
             # false_positive_report.yml fields: repository, issue_number, reason, evidence
-            # We don't have the original issue_number from stored data, use "N/A"
-            template_params["issue_number"] = "N/A"
+            template_params["issue_number"] = str(issue_number) if issue_number else "N/A"
             template_params["reason"] = safe_reasoning
             template_params["evidence"] = (
                 f"AI verdict: {safe_verdict} (confidence {confidence:.0%})\nProvider: {provider}\n\n{safe_reasoning}"
@@ -1270,6 +1251,10 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             self._data.ha_next,
         )
         result_dict = result.to_dict()
+
+        # AI auto-analyze for incompatible/warning packages
+        if self._ai_manager and self._ai_enabled and result.status in (STATUS_INCOMPATIBLE, STATUS_WARNING):
+            await self._ai_analyze_result(result, result_dict)
 
         # Update in results list
         found = False

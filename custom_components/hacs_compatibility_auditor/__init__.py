@@ -193,6 +193,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def async_ai_confirm_report(call: ServiceCall) -> ServiceResponse:
         """Handle the ai_confirm_report service call."""
         entity_id = call.data.get("entity_id", "")
+        issue_number = call.data.get("issue_number")
         action = call.data.get("action")
         if not entity_id:
             return {"success": False, "error": "entity_id parameter is required"}
@@ -202,8 +203,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "success": False,
                 "error": f"Could not resolve entity {entity_id} to a repository",
             }
-        _LOGGER.info("Confirming AI report for %s (entity: %s)", repository, entity_id)
-        return await coordinator.async_confirm_report(repository, action)
+        _LOGGER.info("Confirming AI report for %s (entity: %s, issue: %s)", repository, entity_id, issue_number)
+        return await coordinator.async_confirm_report(repository, action, issue_number)
 
     # ------------------------------------------------------------------ #
     # Register services                                                    #
@@ -287,6 +288,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         schema=vol.Schema(
             {
                 vol.Required("entity_id"): cv.entity_id,
+                vol.Optional("issue_number", default=None): vol.Any(None, vol.All(int, vol.Range(min=1))),
                 vol.Optional("action", default="report_incompatibility"): vol.In(
                     {"add_false_positive", "report_incompatibility"}
                 ),
