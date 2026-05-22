@@ -24,11 +24,7 @@
       "cannot_connect": "No s'ha pogut connectar a l'API de GitHub",
       "invalid_token": "Token de GitHub invàlid",
       "hacs_not_found": "HACS no està instal·lat o no s'ha pogut accedir a les seves dades",
-      "invalid_repo_format": "El repositori ha de tenir el format 'owner/repo'",
-      "provider_name_required": "El nom del proveïdor és obligatori",
-      "provider_model_required": "El nom del model és obligatori",
-      "provider_url_required": "La URL base és obligatòria",
-      "provider_key_required": "La clau API és obligatòria per a aquest tipus de proveïdor"
+      "invalid_repo_format": "El repositori ha de tenir el format 'owner/repo'"
     },
     "abort": {
       "already_configured": "La integració ja està configurada"
@@ -75,6 +71,12 @@
           "temperature": "Temperatura"
         }
       }
+    },
+    "error": {
+      "provider_name_required": "El nom del proveïdor és obligatori",
+      "provider_model_required": "El nom del model és obligatori",
+      "provider_url_required": "La URL base és obligatòria",
+      "provider_key_required": "La clau API és obligatòria per a aquest tipus de proveïdor"
     }
   },
   "entity": {
@@ -176,6 +178,10 @@
         "entity_id": {
           "name": "Paquet HACS",
           "description": "Selecciona el sensor del paquet del qual vols confirmar el reporte"
+        },
+        "issue_number": {
+          "name": "Número d'incidència",
+          "description": "Número de la incidència a GitHub (requerit per a plantilla de fals positiu)"
         },
         "action": {
           "name": "Acció",

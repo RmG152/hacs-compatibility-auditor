@@ -24,11 +24,7 @@
       "cannot_connect": "Could not connect to the GitHub API",
       "invalid_token": "Invalid GitHub token",
       "hacs_not_found": "HACS is not installed or its data could not be accessed",
-      "invalid_repo_format": "Repository must be in 'owner/repo' format",
-      "provider_name_required": "Provider name is required",
-      "provider_model_required": "Model name is required",
-      "provider_url_required": "Base URL is required",
-      "provider_key_required": "API key is required for this provider type"
+      "invalid_repo_format": "Repository must be in 'owner/repo' format"
     },
     "abort": {
       "already_configured": "The integration is already configured"
@@ -75,6 +71,12 @@
           "temperature": "Temperature"
         }
       }
+    },
+    "error": {
+      "provider_name_required": "Provider name is required",
+      "provider_model_required": "Model name is required",
+      "provider_url_required": "Base URL is required",
+      "provider_key_required": "API key is required for this provider type"
     }
   },
   "entity": {
@@ -176,6 +178,10 @@
         "entity_id": {
           "name": "HACS package",
           "description": "Select the package sensor to confirm"
+        },
+        "issue_number": {
+          "name": "Issue number",
+          "description": "GitHub issue number (required for false_positive report template)"
         },
         "action": {
           "name": "Action",

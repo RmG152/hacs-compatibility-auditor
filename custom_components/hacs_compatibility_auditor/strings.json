@@ -179,6 +179,7 @@
           "name": "HACS package",
           "description": "Select the package sensor to confirm"
         },
+        "issue_number": {
           "name": "Issue number",
           "description": "GitHub issue number (required for false_positive report template)"
         },

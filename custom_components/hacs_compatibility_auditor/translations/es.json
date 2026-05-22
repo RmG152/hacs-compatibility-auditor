@@ -24,11 +24,7 @@
       "cannot_connect": "No se pudo conectar a la API de GitHub",
       "invalid_token": "Token de GitHub inválido",
       "hacs_not_found": "HACS no está instalado o no se pudo acceder a sus datos",
-      "invalid_repo_format": "El repositorio debe tener el formato 'owner/repo'",
-      "provider_name_required": "El nombre del proveedor es obligatorio",
-      "provider_model_required": "El nombre del modelo es obligatorio",
-      "provider_url_required": "La URL base es obligatoria",
-      "provider_key_required": "La API key es obligatoria para este tipo de proveedor"
+      "invalid_repo_format": "El repositorio debe tener el formato 'owner/repo'"
     },
     "abort": {
       "already_configured": "La integración ya está configurada"
@@ -38,7 +34,7 @@
     "step": {
       "init": {
         "title": "Opciones de HACS Compatibility Auditor",
-        "description": "Ajusta la configuración de auditoría.{extra_warning}",
+        "description": "Ajusta la configuración de auditoría. Las reglas comunitarias ayudan a reducir los falsos positivos proporcionando datos de compatibilidad curados.{extra_warning}",
         "data": {
           "github_token": "Token de GitHub (opcional)",
           "check_interval": "Intervalo de comprobación (horas)",
@@ -75,6 +71,12 @@
           "temperature": "Temperatura"
         }
       }
+    },
+    "error": {
+      "provider_name_required": "El nombre del proveedor es obligatorio",
+      "provider_model_required": "El nombre del modelo es obligatorio",
+      "provider_url_required": "La URL base es obligatoria",
+      "provider_key_required": "La API key es obligatoria para este tipo de proveedor"
     }
   },
   "entity": {
@@ -176,6 +178,10 @@
         "entity_id": {
           "name": "Paquete HACS",
           "description": "Selecciona el sensor del paquete del que quieres confirmar el reporte"
+        },
+        "issue_number": {
+          "name": "Número de incidencia",
+          "description": "Número de la incidencia en GitHub (requerido para plantilla de falso positivo)"
         },
         "action": {
           "name": "Acción",
