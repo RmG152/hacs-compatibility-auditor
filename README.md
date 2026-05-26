@@ -122,15 +122,73 @@ service: hacs_compatibility_auditor.check_now
 
 ### `hacs_compatibility_auditor.check_package`
 
-Check a single HACS package's compatibility by repository name, without waiting for a full scan.
+Check a single HACS package's compatibility by selecting its sensor.
 
 ```yaml
 service: hacs_compatibility_auditor.check_package
 data:
-  repository: "owner/repo-name"
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
 ```
 
 Returns the compatibility result for that package.
+
+### `hacs_compatibility_auditor.ai_analyze_package`
+
+Uses an AI provider to analyze if a HACS package has real compatibility issues.
+
+```yaml
+service: hacs_compatibility_auditor.ai_analyze_package
+data:
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
+  provider: "My OpenAI"  # optional, uses first configured provider
+```
+
+### `hacs_compatibility_auditor.ai_categorize_issue`
+
+Categorizes a specific GitHub issue using AI.
+
+```yaml
+service: hacs_compatibility_auditor.ai_categorize_issue
+data:
+  repository: "owner/repo-name"
+  issue_number: 42
+  provider: "My OpenAI"  # optional
+```
+
+### `hacs_compatibility_auditor.report_to_rules`
+
+Creates a GitHub issue on the community rules repository with AI analysis.
+
+```yaml
+service: hacs_compatibility_auditor.report_to_rules
+data:
+  repository: "owner/repo-name"
+  issue_number: 42
+  category: "false_positive"
+  reasoning: "The AI determined this issue is a user configuration problem"
+  action: "add_false_positive"  # or "report_incompatibility"
+```
+
+### `hacs_compatibility_auditor.ai_analyze_all`
+
+Runs AI analysis on all packages that are not compatible or ignored.
+
+```yaml
+service: hacs_compatibility_auditor.ai_analyze_all
+data:
+  provider: "My OpenAI"  # optional
+```
+
+### `hacs_compatibility_auditor.ai_confirm_report`
+
+Creates a GitHub issue using stored AI analysis for a package.
+
+```yaml
+service: hacs_compatibility_auditor.ai_confirm_report
+data:
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
+  action: "add_false_positive"  # optional, derived from verdict if omitted
+```
 
 ## Caching
 

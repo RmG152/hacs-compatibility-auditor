@@ -111,9 +111,11 @@ For each INCOMPATIBLE or WARNING package:
        └── Result stored in ai_analysis field (does not override algorithm status)
 ```
 
-The AI analysis can also be triggered on-demand via two services:
+The AI analysis can also be triggered on-demand via several services:
 - `ai_analyze_package` — Full analysis of a package's compatibility
 - `ai_categorize_issue` — Categorize a specific issue (true positive / false positive / etc.)
+- `ai_analyze_all` — Analyze all non-compatible packages at once
+- `ai_confirm_report` — Create a rules repository issue using stored AI analysis
 
 Reports can be submitted to the community rules repository via `report_to_rules`.
 

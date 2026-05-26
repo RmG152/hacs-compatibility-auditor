@@ -36,21 +36,21 @@ No additional data fields required.
 
 ## `hacs_compatibility_auditor.check_package`
 
-Checks a single HACS package by repository name. Useful for refreshing one specific package without waiting for a full scan.
+Checks a single HACS package by selecting its sensor. Useful for refreshing one specific package without waiting for a full scan.
 
 ### Request
 
 ```yaml
 service: hacs_compatibility_auditor.check_package
 data:
-  repository: "owner/repo-name"
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
 ```
 
 ### Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `repository` | `string` | **Yes** | Full repository name in `owner/repo` format, e.g. `"home-assistant/core"` |
+| `entity_id` | `string` | **Yes** | Entity ID of the package sensor to check |
 
 ### Response
 
@@ -142,7 +142,7 @@ Uses an AI provider to analyze if a HACS package has real compatibility issues. 
 ```yaml
 service: hacs_compatibility_auditor.ai_analyze_package
 data:
-  repository: "owner/repo-name"
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
   # provider: "My OpenAI"  # optional, uses first configured if omitted
 ```
 
@@ -150,7 +150,7 @@ data:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `repository` | `string` | **Yes** | Full repository name in `owner/repo` format |
+| `entity_id` | `string` | **Yes** | Entity ID of the package sensor to analyze |
 | `provider` | `string` | No | Name of the AI provider to use (uses first configured if omitted) |
 
 ### Response

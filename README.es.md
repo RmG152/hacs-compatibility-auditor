@@ -101,15 +101,73 @@ service: hacs_compatibility_auditor.check_now
 
 ### `hacs_compatibility_auditor.check_package`
 
-Comprueba la compatibilidad de un paquete HACS específico por nombre de repositorio, sin esperar un escaneo completo.
+Comprueba la compatibilidad de un paquete HACS específico seleccionando su sensor.
 
 ```yaml
 service: hacs_compatibility_auditor.check_package
 data:
-  repository: "owner/repo-name"
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
 ```
 
 Devuelve el resultado de compatibilidad para ese paquete.
+
+### `hacs_compatibility_auditor.ai_analyze_package`
+
+Utiliza un proveedor de IA para analizar si un paquete HACS tiene problemas reales de compatibilidad.
+
+```yaml
+service: hacs_compatibility_auditor.ai_analyze_package
+data:
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
+  provider: "My OpenAI"  # opcional, usa el primer proveedor configurado
+```
+
+### `hacs_compatibility_auditor.ai_categorize_issue`
+
+Categoriza una incidencia específica de GitHub usando IA.
+
+```yaml
+service: hacs_compatibility_auditor.ai_categorize_issue
+data:
+  repository: "owner/repo-name"
+  issue_number: 42
+  provider: "My OpenAI"  # opcional
+```
+
+### `hacs_compatibility_auditor.report_to_rules`
+
+Crea una incidencia en el repositorio de reglas comunitarias con el análisis de IA.
+
+```yaml
+service: hacs_compatibility_auditor.report_to_rules
+data:
+  repository: "owner/repo-name"
+  issue_number: 42
+  category: "false_positive"
+  reasoning: "La IA determinó que esta incidencia es un problema de configuración del usuario"
+  action: "add_false_positive"  # o "report_incompatibility"
+```
+
+### `hacs_compatibility_auditor.ai_analyze_all`
+
+Ejecuta análisis con IA en todos los paquetes que no sean compatibles o ignorados.
+
+```yaml
+service: hacs_compatibility_auditor.ai_analyze_all
+data:
+  provider: "My OpenAI"  # opcional
+```
+
+### `hacs_compatibility_auditor.ai_confirm_report`
+
+Crea una incidencia usando el análisis de IA almacenado para un paquete.
+
+```yaml
+service: hacs_compatibility_auditor.ai_confirm_report
+data:
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
+  action: "add_false_positive"  # opcional, se deriva del veredicto si se omite
+```
 
 ## Caché
 

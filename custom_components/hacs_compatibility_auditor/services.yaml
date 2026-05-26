@@ -101,7 +101,7 @@ report_to_rules:
           multiline: true
     action:
       name: Acción
-      description: "Tipo de reporte: add_false_positive (usa plantilla false_positive_report) o report_incompatibility (usa plantilla blacklist_request)"
+      description: "add_false_positive" o "report_incompatibility". Determina la plantilla de incidencia a usar.
       required: true
       selector:
         select:
