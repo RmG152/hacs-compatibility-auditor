@@ -61,14 +61,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ------------------------------------------------------------------ #
 
     def _get_repository_from_entity_id(entity_id: str) -> str | None:
-        """Resolve a package sensor entity_id to its repository string."""
+        """Resolve a package sensor entity_id to its repository string.
+
+        Reads the ``repository`` attribute directly from the entity's
+        ``extra_state_attributes`` so there is no ambiguity when owner or
+        repo names contain underscores.
+        """
         entity_reg = er.async_get(hass)
         entity = entity_reg.async_get(entity_id)
         if entity is None:
             _LOGGER.warning("Entity %s not found in registry", entity_id)
             return None
-        # The unique_id is hacs_compatibility_auditor_package_{slug}
-        # where slug = repository.lower().replace("/", "_")
+        # Prefer the live state attributes (always available once the sensor
+        # has been initialised) which contain the full ``repository`` field.
+        state = hass.states.get(entity_id)
+        if state is not None:
+            repository = state.attributes.get("repository")
+            if repository:
+                return repository
+        # Fallback: try to reconstruct from unique_id.
+        # unique_id format: hacs_compatibility_auditor_package_{slug}
+        # where slug = full_name.lower().replace("/", "_").
+        # Because owner/repo names can contain underscores we cannot reliably
+        # reverse the slug.  Instead we match against known coordinator data.
         uid = entity.unique_id or ""
         prefix = f"{DOMAIN}_package_"
         if not uid.startswith(prefix):
@@ -79,13 +94,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 prefix,
             )
             return None
-        slug = uid[len(prefix) :]  # e.g. "custom-cards_button-card"
-        # Reverse the slugification: rpartition on last "_" gives owner / _ / repo
-        owner, _, repo = slug.rpartition("_")
-        if not owner or not repo:
-            _LOGGER.warning("Cannot parse repository from entity %s unique_id %s", entity_id, uid)
-            return None
-        return f"{owner}/{repo}"
+        slug = uid[len(prefix) :]
+        # Match slug against coordinator results by comparing lowercased
+        # full_name with underscores replaced by the slug.
+        coordinator_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if coordinator_data is not None:
+            results = getattr(coordinator_data, "data", None)
+            if results is not None:
+                for result in results.get("results", []):
+                    full_name = result.get("repository", "")
+                    if full_name.lower().replace("/", "_") == slug:
+                        return full_name
+        _LOGGER.warning(
+            "Cannot resolve repository for entity %s (unique_id=%s)",
+            entity_id,
+            uid,
+        )
+        return None
 
     def _get_provider_name(provider: str | None) -> str | None:
         """Resolve provider name: 'auto' or None → first configured provider."""

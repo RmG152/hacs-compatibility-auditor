@@ -845,12 +845,12 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         owner, repo = repository.split("/")
 
         try:
-            # Fetch the specific issue from GitHub
+            # Fetch the specific issue from GitHub reusing the coordinator session
             url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}"
-            session = async_create_clientsession(self.hass)
-            headers = {"Accept": "application/vnd.github.v3+json"}
-            if self._github_token:
-                headers["Authorization"] = f"token {self._github_token}"
+            if not self._github_client:
+                return {"success": False, "error": "GitHub client not initialized"}
+            session = self._github_client._session
+            headers = self._github_client._get_headers()
 
             async with session.get(url, headers=headers) as resp:
                 if resp.status != 200:

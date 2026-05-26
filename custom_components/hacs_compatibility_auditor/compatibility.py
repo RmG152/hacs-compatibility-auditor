@@ -295,9 +295,13 @@ class CompatibilityChecker:
             if not manifest_compatible_current or has_incompatible_issue or release_deprecated:
                 result.status = STATUS_INCOMPATIBLE
                 result.compatible_with_current = False
-                result.compatible_with_next = (
-                    manifest_compatible_next and not has_incompatible_issue and not release_deprecated
-                )
+                # If ha_next is unknown, compatible_with_next is unknown (None)
+                if ha_next is None:
+                    result.compatible_with_next = None
+                else:
+                    result.compatible_with_next = (
+                        manifest_compatible_next and not has_incompatible_issue and not release_deprecated
+                    )
                 reasons: list[str] = []
                 if not manifest_compatible_current:
                     reasons.append(
@@ -313,7 +317,11 @@ class CompatibilityChecker:
             elif (ha_next and not manifest_compatible_next) or has_warning_issue or release_breaking:
                 result.status = STATUS_WARNING
                 result.compatible_with_current = manifest_compatible_current and not has_warning_issue
-                result.compatible_with_next = manifest_compatible_next and not release_breaking
+                # If ha_next is unknown, compatible_with_next is unknown (None)
+                if ha_next is None:
+                    result.compatible_with_next = None
+                else:
+                    result.compatible_with_next = manifest_compatible_next and not release_breaking
                 reasons = []
                 if ha_next and not manifest_compatible_next:
                     reasons.append(
