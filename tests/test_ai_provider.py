@@ -3,8 +3,6 @@
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from custom_components.hacs_compatibility_auditor.ai_provider import (
     AIAnalysisResult,
     AIProviderConfig,
@@ -24,6 +22,7 @@ from custom_components.hacs_compatibility_auditor.const import (
     PROVIDER_TYPE_OLLAMA,
     PROVIDER_TYPE_OPENAI,
 )
+import pytest
 
 
 def _make_config(provider_type: str, **overrides) -> AIProviderConfig:

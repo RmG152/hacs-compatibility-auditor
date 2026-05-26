@@ -23,11 +23,7 @@ from .const import (
 from .github_client import GitHubClient
 from .hacs_repository import HacsPackage
 from .rules_client import RulesClient
-from .version_utils import (
-    check_version_requirement,
-    parse_ha_version,
-    satisfies_constraint,
-)
+from .version_utils import check_version_requirement, parse_ha_version, satisfies_constraint
 
 _LOGGER = logging.getLogger(__name__)
 

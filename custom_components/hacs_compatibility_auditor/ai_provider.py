@@ -66,7 +66,7 @@ class AIProviderConfig:
     temperature: float = DEFAULT_AI_TEMPERATURE
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AIProviderConfig":
+    def from_dict(cls, data: dict[str, Any]) -> AIProviderConfig:
         """Create config from a dict (as stored in config entry)."""
         provider_type = data.get(CONF_AI_PROVIDER_TYPE, PROVIDER_TYPE_OPENAI)
         return cls(
@@ -244,7 +244,7 @@ class AIProvider(ABC):
                 result.verdict = parsed.get("verdict", parsed.get("category", result.verdict))
                 result.reasoning = parsed.get("reasoning", parsed.get("reason", ""))
                 result.confidence = float(parsed.get("confidence", 0))
-            except (json.JSONDecodeError, ValueError, TypeError):
+            except json.JSONDecodeError, ValueError, TypeError:
                 result.reasoning = content_stripped[:1000]
         else:
             result.reasoning = content_stripped[:1000]

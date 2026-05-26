@@ -3,10 +3,9 @@
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+from custom_components.hacs_compatibility_auditor.rules_client import RulesClient
 import pytest
 import yaml
-
-from custom_components.hacs_compatibility_auditor.rules_client import RulesClient
 
 
 @pytest.fixture

@@ -8,13 +8,7 @@ from typing import Any
 import aiohttp
 import yaml
 
-from .const import (
-    DEFAULT_RULES_REPO,
-    GITHUB_API_BASE,
-    RULES_CACHE_TTL_SECONDS,
-    RULES_FILES,
-    RULES_INDEX_FILE,
-)
+from .const import DEFAULT_RULES_REPO, GITHUB_API_BASE, RULES_CACHE_TTL_SECONDS, RULES_FILES, RULES_INDEX_FILE
 from .version_utils import check_version_requirement
 
 _LOGGER = logging.getLogger(__name__)

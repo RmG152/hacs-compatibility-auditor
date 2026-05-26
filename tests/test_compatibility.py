@@ -2,17 +2,8 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-from custom_components.hacs_compatibility_auditor.compatibility import (
-    CompatibilityChecker,
-    CompatibilityResult,
-)
-from custom_components.hacs_compatibility_auditor.const import (
-    STATUS_COMPATIBLE,
-    STATUS_INCOMPATIBLE,
-    STATUS_WARNING,
-)
+from custom_components.hacs_compatibility_auditor.compatibility import CompatibilityChecker, CompatibilityResult
+from custom_components.hacs_compatibility_auditor.const import STATUS_COMPATIBLE, STATUS_INCOMPATIBLE, STATUS_WARNING
 from custom_components.hacs_compatibility_auditor.github_client import (
     GitHubClient,
     GitHubIssue,
@@ -21,7 +12,7 @@ from custom_components.hacs_compatibility_auditor.github_client import (
 )
 from custom_components.hacs_compatibility_auditor.hacs_repository import HacsPackage
 from custom_components.hacs_compatibility_auditor.rules_client import RulesClient
-
+import pytest
 
 # --- Fixtures ---
 
@@ -29,8 +20,7 @@ from custom_components.hacs_compatibility_auditor.rules_client import RulesClien
 @pytest.fixture
 def mock_github_client():
     """Create a mock GitHub client."""
-    client = AsyncMock(spec=GitHubClient)
-    return client
+    return AsyncMock(spec=GitHubClient)
 
 
 @pytest.fixture

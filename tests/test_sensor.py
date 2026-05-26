@@ -2,15 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from custom_components.hacs_compatibility_auditor.const import (
-    STATUS_COMPATIBLE,
-    STATUS_INCOMPATIBLE,
-    STATUS_WARNING,
-)
-from custom_components.hacs_compatibility_auditor.sensor import (
-    HacsCompatibilityGlobalSensor,
-    HacsPackageSensor,
-)
+from custom_components.hacs_compatibility_auditor.const import STATUS_COMPATIBLE, STATUS_INCOMPATIBLE, STATUS_WARNING
+from custom_components.hacs_compatibility_auditor.sensor import HacsCompatibilityGlobalSensor, HacsPackageSensor
 
 
 class TestGlobalSensorValues:
@@ -83,7 +76,7 @@ class TestGlobalSensorValues:
 class TestPackageSensor:
     """Tests for per-package sensor."""
 
-    def _make_coordinator(self, data: dict = None):
+    def _make_coordinator(self, data: dict | None = None):
         """Create a mock coordinator."""
         coordinator = MagicMock()
         coordinator.data = data

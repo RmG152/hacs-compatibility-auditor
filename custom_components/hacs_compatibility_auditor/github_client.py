@@ -78,6 +78,16 @@ class GitHubClient:
         self._cache: dict[str, tuple[float, Any]] = {}
         self._cache_ttl: float = 43200  # 12 hours in seconds
 
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        """Return the aiohttp session."""
+        return self._session
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return request headers including auth if token is available."""
+        return self._get_headers()
+
     def _get_headers(self) -> dict[str, str]:
         """Get request headers including auth if token is available."""
         headers = {

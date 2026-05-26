@@ -727,7 +727,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             if not cleaned:
                 return None
             return parse_version(cleaned)
-        except (InvalidVersion, ValueError):
+        except InvalidVersion, ValueError:
             return None
 
     @property
@@ -849,8 +849,8 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}"
             if not self._github_client:
                 return {"success": False, "error": "GitHub client not initialized"}
-            session = self._github_client._session
-            headers = self._github_client._get_headers()
+            session = self._github_client.session
+            headers = self._github_client.headers
 
             async with session.get(url, headers=headers) as resp:
                 if resp.status != 200:

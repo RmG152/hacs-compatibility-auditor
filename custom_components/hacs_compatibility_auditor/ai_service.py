@@ -10,13 +10,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .ai_provider import (
-    AIAnalysisResult,
-    AIProvider,
-    AIProviderConfig,
-    IssueCategoryResult,
-    create_provider,
-)
+from .ai_provider import AIAnalysisResult, AIProvider, AIProviderConfig, IssueCategoryResult, create_provider
 from .const import AI_CATEGORY_UNCERTAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -301,7 +295,7 @@ class AIManager:
                 result.category = parsed.get("category", parsed.get("verdict", AI_CATEGORY_UNCERTAIN))
                 result.confidence = float(parsed.get("confidence", 0))
                 result.reasoning = parsed.get("reasoning", parsed.get("reason", ""))
-            except (ValueError, TypeError, json.JSONDecodeError):
+            except ValueError, TypeError, json.JSONDecodeError:
                 result.category = AI_CATEGORY_UNCERTAIN
                 result.reasoning = content[:500]
             return result

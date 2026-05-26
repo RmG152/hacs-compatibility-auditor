@@ -10,12 +10,7 @@ import logging
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, UnknownEntry
-from homeassistant.core import (
-    HomeAssistant,
-    ServiceCall,
-    ServiceResponse,
-    SupportsResponse,
-)
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
 from .const import (
@@ -228,7 +223,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "success": False,
                 "error": f"Could not resolve entity {entity_id} to a repository",
             }
-        _LOGGER.info("Confirming AI report for %s (entity: %s, issue: %s)", repository, entity_id, issue_number)
+        _LOGGER.info(
+            "Confirming AI report for %s (entity: %s, issue: %s)",
+            repository,
+            entity_id,
+            issue_number,
+        )
         return await coordinator.async_confirm_report(repository, action, issue_number)
 
     # ------------------------------------------------------------------ #

@@ -33,7 +33,7 @@ def satisfies_constraint(version: Version, constraint: str) -> bool:
 
     try:
         req_ver = parse_ha_version(req_str)
-    except (InvalidVersion, ValueError):
+    except InvalidVersion, ValueError:
         _LOGGER.warning("Cannot parse requirement version: %s", req_str)
         return False
 
@@ -74,7 +74,7 @@ def check_version_requirement(ha_version: str, requirement: str) -> bool:
 
     try:
         ha_ver = parse_ha_version(ha_version)
-    except (InvalidVersion, ValueError):
+    except InvalidVersion, ValueError:
         _LOGGER.warning("Cannot parse HA version: %s", ha_version)
         return False
 

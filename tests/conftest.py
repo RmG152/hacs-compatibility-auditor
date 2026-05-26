@@ -3,7 +3,6 @@
 import sys
 from unittest.mock import MagicMock
 
-
 # Build a mock homeassistant package hierarchy
 ha = MagicMock()
 

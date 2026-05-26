@@ -3,12 +3,7 @@
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorEntityDescription,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
@@ -16,13 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    DOMAIN,
-    STATUS_COMPATIBLE,
-    STATUS_INCOMPATIBLE,
-    STATUS_UNKNOWN,
-    STATUS_WARNING,
-)
+from .const import DOMAIN, STATUS_COMPATIBLE, STATUS_INCOMPATIBLE, STATUS_UNKNOWN, STATUS_WARNING
 from .coordinator import HacsCompatibilityCoordinator
 
 _LOGGER = logging.getLogger(__name__)
