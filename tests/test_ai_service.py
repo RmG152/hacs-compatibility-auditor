@@ -121,9 +121,9 @@ class TestAIManager:
         manager = AIManager(mock_hass)
         assert manager._resolve_provider(None) is None
 
-    @patch("custom_components.hacs_compatibility_auditor.ai_service.async_create_clientsession")
+    @patch("custom_components.hacs_compatibility_auditor.ai_provider.aiohttp.ClientSession")
     @pytest.mark.asyncio
-    async def test_analyze_package_success(self, mock_create_session, mock_hass, mock_provider_configs):
+    async def test_analyze_package_success(self, mock_session_cls, mock_hass, mock_provider_configs):
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.__aenter__.return_value = mock_response
@@ -144,7 +144,7 @@ class TestAIManager:
         mock_session = MagicMock()
         mock_session.post = MagicMock(return_value=mock_response)
         mock_session.close = AsyncMock()
-        mock_create_session.return_value = mock_session
+        mock_session_cls.return_value = mock_session
 
         manager = AIManager(mock_hass, mock_provider_configs)
         result = await manager.analyze_package(
@@ -177,9 +177,9 @@ class TestAIManager:
         )
         assert result.error == "No AI provider configured"
 
-    @patch("custom_components.hacs_compatibility_auditor.ai_service.async_create_clientsession")
+    @patch("custom_components.hacs_compatibility_auditor.ai_provider.aiohttp.ClientSession")
     @pytest.mark.asyncio
-    async def test_categorize_issue_success(self, mock_create_session, mock_hass, mock_provider_configs):
+    async def test_categorize_issue_success(self, mock_session_cls, mock_hass, mock_provider_configs):
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.__aenter__.return_value = mock_response
@@ -200,7 +200,7 @@ class TestAIManager:
         mock_session = MagicMock()
         mock_session.post = MagicMock(return_value=mock_response)
         mock_session.close = AsyncMock()
-        mock_create_session.return_value = mock_session
+        mock_session_cls.return_value = mock_session
 
         manager = AIManager(mock_hass, mock_provider_configs)
         result = await manager.categorize_issue(
