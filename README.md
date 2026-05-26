@@ -1,6 +1,8 @@
 # HACS Compatibility Auditor
 
 [![HACS Integration](https://img.shields.io/badge/HACS-Integration-blue.svg)](https://hacs.xyz)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![CI](https://github.com/RmG152/hacs-compatibility-auditor/actions/workflows/ci.yaml/badge.svg)](https://github.com/RmG152/hacs-compatibility-auditor/actions/workflows/ci.yaml)
 [![Build](https://img.shields.io/github/actions/workflow/status/RmG152/hacs-compatibility-auditor/ci.yaml?branch=main)](https://github.com/RmG152/hacs-compatibility-auditor/actions)
 [![Release](https://img.shields.io/github/v/release/RmG152/hacs-compatibility-auditor)](https://github.com/RmG152/hacs-compatibility-auditor/releases)
 
