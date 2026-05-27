@@ -280,9 +280,12 @@ class CompatibilityChecker:
                             release.tag_name,
                             package.full_name,
                         )
+                        snippet = body[:500]
+                        snippet = f"{release.tag_name}: {snippet}"
+                        matching_releases.append(snippet)
                         if len(matching_releases) >= 3:
                             break
-            if matching_releases:
+            if matching_releases or release_deprecated:
                 result.data["matching_releases"] = matching_releases
 
             # Determine final status
@@ -333,7 +336,7 @@ class CompatibilityChecker:
             else:
                 result.status = STATUS_COMPATIBLE
                 result.compatible_with_current = True
-                result.compatible_with_next = True
+                result.compatible_with_next = None if ha_next is None else True
                 result.reason = "No compatibility issues detected"
 
             _LOGGER.info(

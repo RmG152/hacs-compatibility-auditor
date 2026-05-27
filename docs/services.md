@@ -375,7 +375,7 @@ Creates a GitHub issue on the community rules repository using **stored AI analy
 ```yaml
 service: hacs_compatibility_auditor.ai_confirm_report
 data:
-  repository: "owner/repo-name"
+  entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
   # action: "add_false_positive"  # optional, derived from verdict if omitted
 ```
 
@@ -383,7 +383,7 @@ data:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `repository` | `string` | **Yes** | Full repository name in `owner/repo` format |
+| `entity_id` | `string` | **Yes** | Entity ID of the package sensor to confirm |
 | `action` | `string` | No | Override action. Derived from verdict when omitted: `not_affected` → `add_false_positive`, `affected` → `report_incompatibility`. Determines the issue template used |
 
 ### Response (API success)
@@ -486,7 +486,7 @@ When calling `ai_analyze_package` from a card, the response contains the AI resu
 const result = await hass.callService(
   'hacs_compatibility_auditor',
   'ai_analyze_package',
-  { repository: 'owner/repo-name' },
+  { entity_id: 'sensor.hacs_compatibility_auditor_package_owner_repo' },
   { returnResponse: true }
 );
 
@@ -510,7 +510,7 @@ tap_action:
   action: call-service
   service: hacs_compatibility_auditor.ai_analyze_package
   service_data:
-    repository: "owner/repo-name"
+    entity_id: "sensor.hacs_compatibility_auditor_package_owner_repo"
   confirmation:
     text: "Run AI analysis on this package?"
 show_state: true
@@ -575,7 +575,7 @@ tap_action:
   action: call-service
   service: hacs_compatibility_auditor.ai_confirm_report
   service_data:
-    repository: "owner/repo-name"
+    entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
   confirmation:
     text: "Create a GitHub issue on the rules repository with this AI finding?"
 show_state: true
@@ -594,7 +594,7 @@ alias: "Confirm AI finding for package"
 sequence:
   - service: hacs_compatibility_auditor.ai_confirm_report
     data:
-      repository: "owner/repo-name"
+      entity_id: sensor.hacs_compatibility_auditor_package_owner_repo
   - service: notify.persistent_notification
     data:
       title: "AI Report Created"
@@ -624,7 +624,7 @@ const result = await hass.callService(
 const result = await hass.callService(
   'hacs_compatibility_auditor',
   'check_package',
-  { repository: 'owner/repo-name' },
+  { entity_id: 'sensor.hacs_compatibility_auditor_package_owner_repo' },
   { returnResponse: true }
 );
 

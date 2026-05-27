@@ -96,9 +96,12 @@ def _is_safe_url(url: str, provider_type: str) -> tuple[bool, str | None]:
     not resolve to private/reserved addresses.
     """
     try:
-        parsed = urllib.parse.urlparse(url if "://" in url else f"https://{url}")
+        parsed = urllib.parse.urlparse(url)
     except ValueError:
         return False, "invalid_url_format"
+
+    if not parsed.scheme:
+        return False, "https_required"
 
     hostname = parsed.hostname or ""
     if not hostname:
@@ -528,8 +531,18 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
         """Ask the user whether to configure AI providers now."""
         if user_input is not None:
             if user_input.get("setup_ai", False):
-                # User wants to configure AI — go to provider management
-                return await self.async_step_ai_add_provider()
+                # User wants to configure AI — enable AI, providers set up later in options
+                options = dict(self._pending_options)
+                options[CONF_AI_ENABLED] = True
+                options[CONF_AI_AUTO_ANALYZE] = False
+                options[CONF_AI_PROVIDERS] = []
+                return self.async_create_entry(
+                    title="HACS Compatibility Auditor",
+                    data={
+                        CONF_GITHUB_TOKEN: options.get(CONF_GITHUB_TOKEN, ""),
+                    },
+                    options=options,
+                )
             # User skipped AI — create entry with pending options
             options = dict(self._pending_options)
             options[CONF_AI_ENABLED] = user_input.get(CONF_AI_ENABLED, user_input.get("ai_enabled", DEFAULT_AI_ENABLED))

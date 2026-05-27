@@ -579,8 +579,11 @@ class GitHubClient:
 
         if template_params:
             # Use template parameter syntax so GitHub issue forms auto-fill fields
+            MAX_TEMPLATE_PARAM_LENGTH = 1000
             parts = [f"template={quote(template or '')}"]
             for key, value in template_params.items():
+                if len(value) > MAX_TEMPLATE_PARAM_LENGTH:
+                    value = value[:MAX_TEMPLATE_PARAM_LENGTH] + "…"
                 parts.append(f"{quote(key)}={quote(value)}")
             url += "?" + "&".join(parts)
         else:

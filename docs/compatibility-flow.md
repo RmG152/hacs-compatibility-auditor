@@ -224,7 +224,7 @@ If any match is found, `release_breaking = True`.
 - `end of life`, `deprecated`
 - `use this instead`, `use instead`
 - `merged into`, `migrated to`
-- `superse`, `please use`
+- `superseded`, `please use`
 - `has been deprecated`
 
 If any deprecation keyword is found, `release_deprecated = True` and the package is marked as **INCOMPATIBLE** (not just WARNING), because the package author explicitly states the package is obsolete and users should migrate.
@@ -235,22 +235,23 @@ The final status is determined by combining all signals:
 
 ```
 IF manifest NOT compatible with current
-   OR has high-priority issue (priority >= 15):
+   OR has high-priority issue (priority >= 15)
+   OR release_deprecated:
     → INCOMPATIBLE
     → compatible_with_current = False
-    → compatible_with_next = manifest_compatible_next AND no high-priority issues
+    → compatible_with_next = None if ha_next is unknown else manifest_compatible_next AND no high-priority issues AND not release_deprecated
 
 ELIF manifest NOT compatible with next
    OR has medium-priority issue (5 <= priority < 15)
    OR release notes mention breaking changes:
     → WARNING
     → compatible_with_current = manifest_compatible AND no medium-priority issues
-    → compatible_with_next = manifest_compatible_next AND no breaking release notes
+    → compatible_with_next = None if ha_next is unknown else manifest_compatible_next AND no breaking release notes
 
 ELSE:
     → COMPATIBLE
     → compatible_with_current = True
-    → compatible_with_next = True
+    → compatible_with_next = None if ha_next is unknown else True
 ```
 
 **Status summary:**

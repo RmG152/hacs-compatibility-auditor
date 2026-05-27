@@ -1162,6 +1162,9 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         safe_reasoning = _sanitize_ai_text(reasoning)
         safe_verdict = _sanitize_ai_text(verdict, max_len=100)
 
+        if not self._github_client:
+            return {"success": False, "error": "GitHub client unavailable"}
+
         rules_repo = self._rules_repo
         if "/" not in rules_repo:
             return {
@@ -1253,7 +1256,12 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         result_dict = result.to_dict()
 
         # AI auto-analyze for incompatible/warning packages
-        if self._ai_manager and self._ai_enabled and result.status in (STATUS_INCOMPATIBLE, STATUS_WARNING):
+        if (
+            self._ai_manager
+            and self._ai_enabled
+            and self._ai_auto_analyze
+            and result.status in (STATUS_INCOMPATIBLE, STATUS_WARNING)
+        ):
             await self._ai_analyze_result(result, result_dict)
 
         # Update in results list

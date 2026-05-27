@@ -314,9 +314,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             {
                 vol.Required("entity_id"): cv.entity_id,
                 vol.Optional("issue_number", default=None): vol.Any(None, vol.All(int, vol.Range(min=1))),
-                vol.Optional("action", default="report_incompatibility"): vol.In(
-                    {"add_false_positive", "report_incompatibility"}
-                ),
+                vol.Optional("action"): vol.In({"add_false_positive", "report_incompatibility"}),
             }
         ),
         supports_response=SupportsResponse.OPTIONAL,

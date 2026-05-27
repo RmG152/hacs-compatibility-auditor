@@ -503,6 +503,7 @@ class TestCompatibilityCheck:
         # Deprecation should trigger INCOMPATIBLE, not WARNING
         assert result.status == STATUS_INCOMPATIBLE
         assert result.compatible_with_current is False
+        assert result.compatible_with_next is None
 
 
 # --- Result Serialization Tests ---
