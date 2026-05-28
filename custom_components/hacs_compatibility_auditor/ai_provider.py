@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import json
 import logging
+import re
 from typing import Any
 
 import aiohttp
@@ -35,6 +36,23 @@ _LOGGER = logging.getLogger(__name__)
 AI_DEFAULT_TIMEOUT = 30
 
 
+def _redact_tokens(text: str) -> str:
+    """Redact common API token patterns from text using non-greedy patterns."""
+    # More comprehensive patterns to catch various token formats
+    patterns = [
+        (r'["\']?token["\']?\s*[:=]\s*["\']?[a-zA-Z0-9\-_\.]{20,}["\']?', '"token":"[REDACTED]"'),
+        (r'["\']?api_key["\']?\s*[:=]\s*["\']?[a-zA-Z0-9\-_\.]{20,}["\']?', '"api_key":"[REDACTED]"'),
+        (r"Bearer\s+[a-zA-Z0-9\-_\.]{20,}", "Bearer [REDACTED]"),
+        (r"sk-[a-zA-Z0-9]{32,}", "[REDACTED]"),  # OpenAI keys
+        (r"AIza[a-zA-Z0-9\-_]{35}", "[REDACTED]"),  # Google API keys
+        (r"xai-[a-zA-Z0-9]{50,}", "[REDACTED]"),  # Grok keys
+        (r"claude-[a-zA-Z0-9\-_]{40,}", "[REDACTED]"),  # Anthropic keys
+    ]
+    for pattern, replacement in patterns:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
+
+
 @dataclass
 class AIProviderConfig:
     """Configuration for a single AI provider instance."""
@@ -48,7 +66,7 @@ class AIProviderConfig:
     temperature: float = DEFAULT_AI_TEMPERATURE
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AIProviderConfig":
+    def from_dict(cls, data: dict[str, Any]) -> AIProviderConfig:
         """Create config from a dict (as stored in config entry)."""
         provider_type = data.get(CONF_AI_PROVIDER_TYPE, PROVIDER_TYPE_OPENAI)
         return cls(
@@ -62,11 +80,10 @@ class AIProviderConfig:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict for storage in config entry."""
+        """Serialize to dict for storage in config entry (excludes secrets)."""
         return {
             CONF_AI_PROVIDER_TYPE: self.provider_type,
             CONF_AI_PROVIDER_NAME: self.name,
-            CONF_AI_API_KEY: self.api_key,
             CONF_AI_BASE_URL: self.base_url,
             CONF_AI_MODEL: self.model,
             CONF_AI_MAX_TOKENS: self.max_tokens,
@@ -92,7 +109,6 @@ class AIAnalysisResult:
             "reasoning": self.reasoning,
             "confidence": self.confidence,
             "provider_used": self.provider_used,
-            "raw_response": self.raw_response,
             "error": self.error,
         }
 
@@ -116,7 +132,6 @@ class IssueCategoryResult:
             "reasoning": self.reasoning,
             "provider_used": self.provider_used,
             "error": self.error,
-            "raw_response": self.raw_response,
         }
 
 
@@ -179,17 +194,17 @@ class AIProvider(ABC):
             try:
                 async with session.post(url, json=body, headers=headers, timeout=self._timeout) as resp:
                     raw = await resp.text()
-                    result.raw_response = raw[:2000]
+                    # Redact tokens before any further use
+                    raw_redacted = _redact_tokens(raw)
+                    result.raw_response = raw_redacted[:2000]
 
                     if resp.status != 200:
-                        error_detail = raw[:500]
                         _LOGGER.error(
-                            "AI provider %s returned %d: %s",
+                            "AI provider %s returned %d: [REDACTED]",
                             self._config.name,
                             resp.status,
-                            error_detail,
                         )
-                        result.error = f"HTTP {resp.status}: {error_detail}"
+                        result.error = f"HTTP {resp.status}: [REDACTED]"
                         return result
 
                     data = await resp.json()
@@ -229,7 +244,7 @@ class AIProvider(ABC):
                 result.verdict = parsed.get("verdict", parsed.get("category", result.verdict))
                 result.reasoning = parsed.get("reasoning", parsed.get("reason", ""))
                 result.confidence = float(parsed.get("confidence", 0))
-            except (json.JSONDecodeError, ValueError, TypeError):
+            except json.JSONDecodeError, ValueError, TypeError:
                 result.reasoning = content_stripped[:1000]
         else:
             result.reasoning = content_stripped[:1000]

@@ -23,11 +23,7 @@ from .const import (
 from .github_client import GitHubClient
 from .hacs_repository import HacsPackage
 from .rules_client import RulesClient
-from .version_utils import (
-    check_version_requirement,
-    parse_ha_version,
-    satisfies_constraint,
-)
+from .version_utils import check_version_requirement, parse_ha_version, satisfies_constraint
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -260,31 +256,51 @@ class CompatibilityChecker:
             has_incompatible_issue = any(issue.priority >= 15 for issue in issues)
             has_warning_issue = any(5 <= issue.priority < 15 for issue in issues)
 
-            # Check release notes for breaking change mentions
+            # Check release notes for breaking change mentions and deprecation
             release_breaking = False
+            release_deprecated = False
             matching_releases: list[str] = []
             if releases:
                 for release in releases[:3]:
-                    if self._contains_breaking_keywords(release.body):
+                    body = release.body or ""
+                    if self._contains_breaking_keywords(body):
                         release_breaking = True
                         _LOGGER.debug(
                             "Breaking keywords found in release %s for %s",
                             release.tag_name,
                             package.full_name,
                         )
-                        snippet = (release.body or "")[:500]
+                        snippet = body[:500]
                         snippet = f"{release.tag_name}: {snippet}"
                         matching_releases.append(snippet)
-                        if len(matching_releases) >= 2:
+                    if self._contains_deprecation_keywords(body):
+                        release_deprecated = True
+                        _LOGGER.debug(
+                            "Deprecation keywords found in release %s for %s",
+                            release.tag_name,
+                            package.full_name,
+                        )
+                        snippet = body[:500]
+                        snippet = f"{release.tag_name}: {snippet}"
+                        matching_releases.append(snippet)
+                        if len(matching_releases) >= 3:
                             break
-            if matching_releases:
+            if matching_releases or release_deprecated:
                 result.data["matching_releases"] = matching_releases
 
             # Determine final status
-            if not manifest_compatible_current or has_incompatible_issue:
+            # Note: release_deprecated is a strong signal - mark as incompatible
+            # because the package author explicitly says to stop using it
+            if not manifest_compatible_current or has_incompatible_issue or release_deprecated:
                 result.status = STATUS_INCOMPATIBLE
                 result.compatible_with_current = False
-                result.compatible_with_next = manifest_compatible_next and not has_incompatible_issue
+                # If ha_next is unknown, compatible_with_next is unknown (None)
+                if ha_next is None:
+                    result.compatible_with_next = None
+                else:
+                    result.compatible_with_next = (
+                        manifest_compatible_next and not has_incompatible_issue and not release_deprecated
+                    )
                 reasons: list[str] = []
                 if not manifest_compatible_current:
                     reasons.append(
@@ -294,11 +310,17 @@ class CompatibilityChecker:
                 if has_incompatible_issue:
                     high_prio = [i for i in issues if i.priority >= 15]
                     reasons.append(f"{len(high_prio)} high-priority issue(s) found")
+                if release_deprecated:
+                    reasons.append("Package is deprecated (END OF LIFE)")
                 result.reason = "; ".join(reasons)
             elif (ha_next and not manifest_compatible_next) or has_warning_issue or release_breaking:
                 result.status = STATUS_WARNING
                 result.compatible_with_current = manifest_compatible_current and not has_warning_issue
-                result.compatible_with_next = manifest_compatible_next and not release_breaking
+                # If ha_next is unknown, compatible_with_next is unknown (None)
+                if ha_next is None:
+                    result.compatible_with_next = None
+                else:
+                    result.compatible_with_next = manifest_compatible_next and not release_breaking
                 reasons = []
                 if ha_next and not manifest_compatible_next:
                     reasons.append(
@@ -314,7 +336,7 @@ class CompatibilityChecker:
             else:
                 result.status = STATUS_COMPATIBLE
                 result.compatible_with_current = True
-                result.compatible_with_next = True
+                result.compatible_with_next = None if ha_next is None else True
                 result.reason = "No compatibility issues detected"
 
             _LOGGER.info(
@@ -456,5 +478,31 @@ class CompatibilityChecker:
             "removed:",
             "deprecated:",
             "migration required",
+            "end of life",
+            "use this instead",
+            "merged into",
+            "migrated to",
         ]
         return any(pattern in text_lower for pattern in breaking_patterns)
+
+    @staticmethod
+    def _contains_deprecation_keywords(text: str) -> bool:
+        """Check if text contains deprecation/obsolescence keywords.
+
+        These indicate the package is deprecated and users should migrate.
+        """
+        if not text:
+            return False
+        text_lower = text.lower()
+        deprecation_patterns = [
+            "end of life",
+            "deprecated",
+            "use this instead",
+            "use instead",
+            "merged into",
+            "migrated to",
+            "superse",
+            "please use",
+            "has been deprecated",
+        ]
+        return any(pattern in text_lower for pattern in deprecation_patterns)

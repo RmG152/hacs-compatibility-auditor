@@ -9,15 +9,8 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
-from .ai_provider import (
-    AIAnalysisResult,
-    AIProvider,
-    AIProviderConfig,
-    IssueCategoryResult,
-    create_provider,
-)
+from .ai_provider import AIAnalysisResult, AIProvider, AIProviderConfig, IssueCategoryResult, create_provider
 from .const import AI_CATEGORY_UNCERTAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -129,11 +122,7 @@ class AIManager:
             release_notes=release_notes,
         )
 
-        session = async_create_clientsession(self._hass)
-        try:
-            return await provider.analyze(user_prompt, system_prompt, session=session)
-        finally:
-            await session.close()
+        return await provider.analyze(user_prompt, system_prompt, session=None)
 
     async def categorize_issue(
         self,
@@ -163,11 +152,7 @@ class AIManager:
             ha_next=ha_next,
         )
 
-        session = async_create_clientsession(self._hass)
-        try:
-            result = await provider.analyze(user_prompt, system_prompt, session=session)
-        finally:
-            await session.close()
+        result = await provider.analyze(user_prompt, system_prompt, session=None)
 
         category_result = IssueCategoryResult(
             provider_used=result.provider_used,
@@ -230,8 +215,7 @@ class AIManager:
             user_parts.append(f"Algorithm reason: {reason}")
         if release_notes:
             user_parts.append(f"Matching release notes ({len(release_notes)}):")
-            for rl in release_notes:
-                user_parts.append(f"  - {rl[:400]}")
+            user_parts.extend(f"  - {rl[:400]}" for rl in release_notes)
         user_parts.append("")
 
         if issues:
@@ -311,9 +295,10 @@ class AIManager:
                 result.category = parsed.get("category", parsed.get("verdict", AI_CATEGORY_UNCERTAIN))
                 result.confidence = float(parsed.get("confidence", 0))
                 result.reasoning = parsed.get("reasoning", parsed.get("reason", ""))
-                return result
-            except (ValueError, TypeError, json.JSONDecodeError):
-                pass
+            except ValueError, TypeError, json.JSONDecodeError:
+                result.category = AI_CATEGORY_UNCERTAIN
+                result.reasoning = content[:500]
+            return result
 
         result.category = AI_CATEGORY_UNCERTAIN
         result.reasoning = content[:500]

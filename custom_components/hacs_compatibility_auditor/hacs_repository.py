@@ -129,11 +129,7 @@ class HacsRepositoryReader:
             _LOGGER.debug("HACS integration not found in hass.data")
             return []
 
-        _LOGGER.debug(
-            "HACS data object type: %s, attributes: %s",
-            type(hacs_data).__name__,
-            [a for a in dir(hacs_data) if not a.startswith("_")][:10],
-        )
+        _LOGGER.debug("HACS data object type: %s", type(hacs_data).__name__)
 
         packages = []
 

@@ -33,9 +33,9 @@ def satisfies_constraint(version: Version, constraint: str) -> bool:
 
     try:
         req_ver = parse_ha_version(req_str)
-    except (InvalidVersion, ValueError):
+    except InvalidVersion, ValueError:
         _LOGGER.warning("Cannot parse requirement version: %s", req_str)
-        return True
+        return False
 
     result: bool
     if op == ">=":
@@ -54,7 +54,7 @@ def satisfies_constraint(version: Version, constraint: str) -> bool:
         result = version >= req_ver and version.release[:2] == req_ver.release[:2]
     else:
         _LOGGER.warning("Unknown version operator: %s", op)
-        return True
+        return False
 
     _LOGGER.debug("Version constraint check: %s %s %s -> %s", version, op, req_ver, result)
     return result
@@ -74,9 +74,9 @@ def check_version_requirement(ha_version: str, requirement: str) -> bool:
 
     try:
         ha_ver = parse_ha_version(ha_version)
-    except (InvalidVersion, ValueError):
+    except InvalidVersion, ValueError:
         _LOGGER.warning("Cannot parse HA version: %s", ha_version)
-        return True
+        return False
 
     constraints = [c.strip() for c in requirement.split(",")]
     return all(satisfies_constraint(ha_ver, constraint) for constraint in constraints)

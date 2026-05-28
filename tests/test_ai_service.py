@@ -2,16 +2,10 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from custom_components.hacs_compatibility_auditor.ai_provider import (
-    IssueCategoryResult,
-)
+from custom_components.hacs_compatibility_auditor.ai_provider import IssueCategoryResult
 from custom_components.hacs_compatibility_auditor.ai_service import AIManager
-from custom_components.hacs_compatibility_auditor.const import (
-    PROVIDER_TYPE_OLLAMA,
-    PROVIDER_TYPE_OPENAI,
-)
+from custom_components.hacs_compatibility_auditor.const import PROVIDER_TYPE_OLLAMA, PROVIDER_TYPE_OPENAI
+import pytest
 
 
 @pytest.fixture
@@ -42,8 +36,7 @@ def mock_provider_configs():
 @pytest.fixture
 def mock_hass():
     """Create a mock HomeAssistant."""
-    hass = MagicMock()
-    return hass
+    return MagicMock()
 
 
 class TestAIManager:
@@ -121,9 +114,9 @@ class TestAIManager:
         manager = AIManager(mock_hass)
         assert manager._resolve_provider(None) is None
 
-    @patch("custom_components.hacs_compatibility_auditor.ai_service.async_create_clientsession")
+    @patch("custom_components.hacs_compatibility_auditor.ai_provider.aiohttp.ClientSession")
     @pytest.mark.asyncio
-    async def test_analyze_package_success(self, mock_create_session, mock_hass, mock_provider_configs):
+    async def test_analyze_package_success(self, mock_session_cls, mock_hass, mock_provider_configs):
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.__aenter__.return_value = mock_response
@@ -144,7 +137,7 @@ class TestAIManager:
         mock_session = MagicMock()
         mock_session.post = MagicMock(return_value=mock_response)
         mock_session.close = AsyncMock()
-        mock_create_session.return_value = mock_session
+        mock_session_cls.return_value = mock_session
 
         manager = AIManager(mock_hass, mock_provider_configs)
         result = await manager.analyze_package(
@@ -177,9 +170,9 @@ class TestAIManager:
         )
         assert result.error == "No AI provider configured"
 
-    @patch("custom_components.hacs_compatibility_auditor.ai_service.async_create_clientsession")
+    @patch("custom_components.hacs_compatibility_auditor.ai_provider.aiohttp.ClientSession")
     @pytest.mark.asyncio
-    async def test_categorize_issue_success(self, mock_create_session, mock_hass, mock_provider_configs):
+    async def test_categorize_issue_success(self, mock_session_cls, mock_hass, mock_provider_configs):
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.__aenter__.return_value = mock_response
@@ -200,7 +193,7 @@ class TestAIManager:
         mock_session = MagicMock()
         mock_session.post = MagicMock(return_value=mock_response)
         mock_session.close = AsyncMock()
-        mock_create_session.return_value = mock_session
+        mock_session_cls.return_value = mock_session
 
         manager = AIManager(mock_hass, mock_provider_configs)
         result = await manager.categorize_issue(
@@ -260,7 +253,7 @@ class TestBuildPrompts:
 
     def test_build_analysis_prompt_no_issues(self, mock_hass):
         manager = AIManager(mock_hass)
-        system, user = manager._build_analysis_prompt(
+        _, user = manager._build_analysis_prompt(
             package_name="Test Pkg",
             package_repo="owner/repo",
             installed_version="1.0.0",

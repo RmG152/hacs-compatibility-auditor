@@ -5,6 +5,7 @@ import base64
 from dataclasses import dataclass, field
 import json
 import logging
+import re
 import time
 from typing import Any
 from urllib.parse import quote
@@ -76,6 +77,16 @@ class GitHubClient:
         self._rate_limit_reset: float = 0
         self._cache: dict[str, tuple[float, Any]] = {}
         self._cache_ttl: float = 43200  # 12 hours in seconds
+
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        """Return the aiohttp session."""
+        return self._session
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return request headers including auth if token is available."""
+        return self._get_headers()
 
     def _get_headers(self) -> dict[str, str]:
         """Get request headers including auth if token is available."""
@@ -157,11 +168,8 @@ class GitHubClient:
         if cached is not None:
             return cached
 
-        _LOGGER.debug(
-            "GitHub API request: %s (rate_limit_remaining=%d)",
-            url,
-            self._rate_limit_remaining,
-        )
+        safe_url = re.sub(r"[?&][^=]*=[^&]*", "[REDACTED]", url)
+        _LOGGER.debug("GitHub API request: %s (rate_limit_remaining=%d)", safe_url, self._rate_limit_remaining)
 
         last_error: Exception | None = None
 
@@ -261,7 +269,7 @@ class GitHubClient:
 
     async def get_releases(self, owner: str, repo: str, per_page: int = 10) -> list[GitHubRelease]:
         """Get releases for a repository."""
-        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/releases?per_page={per_page}"
+        url = f"{GITHUB_API_BASE}/repos/{quote(owner)}/{quote(repo)}/releases?per_page={per_page}"
         _LOGGER.debug("Fetching releases for %s/%s (per_page=%d)", owner, repo, per_page)
         data = await self._request(url)
 
@@ -285,7 +293,7 @@ class GitHubClient:
 
     async def get_tags(self, owner: str, repo: str, per_page: int = 10) -> list[str]:
         """Get tags for a repository."""
-        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/tags?per_page={per_page}"
+        url = f"{GITHUB_API_BASE}/repos/{quote(owner)}/{quote(repo)}/tags?per_page={per_page}"
         _LOGGER.debug("Fetching tags for %s/%s (per_page=%d)", owner, repo, per_page)
         data = await self._request(url)
 
@@ -302,7 +310,7 @@ class GitHubClient:
         _LOGGER.debug("Fetching manifest for %s/%s", owner, repo)
 
         # Try hacs.json first (HACS v2 format)
-        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/hacs.json"
+        url = f"{GITHUB_API_BASE}/repos/{quote(owner)}/{quote(repo)}/contents/hacs.json"
         _LOGGER.debug("Trying hacs.json: %s", url)
         data = await self._request(url)
 
@@ -332,7 +340,7 @@ class GitHubClient:
                 return manifest
 
         # Fallback: try manifest.json (custom component format)
-        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/custom_components/{repo}/manifest.json"
+        url = f"{GITHUB_API_BASE}/repos/{quote(owner)}/{quote(repo)}/contents/custom_components/{quote(repo)}/manifest.json"
         _LOGGER.debug("Trying manifest.json fallback: %s", url)
         data = await self._request(url)
 
@@ -387,7 +395,7 @@ class GitHubClient:
         # First, search by labels if provided
         if labels:
             for label in labels[:5]:  # Limit to avoid too many API calls
-                url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues?state={state}&labels={quote(label)}&per_page={per_page}"
+                url = f"{GITHUB_API_BASE}/repos/{quote(owner)}/{quote(repo)}/issues?state={quote(state)}&labels={quote(label)}&per_page={quote(str(per_page))}"
                 if since:
                     url += f"&since={quote(since)}"
 
@@ -501,7 +509,7 @@ class GitHubClient:
             _LOGGER.error("Cannot create issue: no GitHub token configured")
             return None
 
-        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues"
+        url = f"{GITHUB_API_BASE}/repos/{quote(owner)}/{quote(repo)}/issues"
         payload: dict[str, Any] = {"title": title}
         if body:
             payload["body"] = body
@@ -523,12 +531,15 @@ class GitHubClient:
                     return data
 
                 error_text = await resp.text()
+                # Sanitize error text before logging
+                sanitized_error = re.sub(r"\"[^\"]*token[^\"]*\"", '"[REDACTED]"', error_text, flags=re.IGNORECASE)
+                sanitized_error = re.sub(r"\"[^\"]*key[^\"]*\"", '"[REDACTED]"', sanitized_error, flags=re.IGNORECASE)
                 _LOGGER.error(
                     "Failed to create issue on %s/%s: HTTP %d - %s",
                     owner,
                     repo,
                     resp.status,
-                    error_text[:300],
+                    sanitized_error[:300],
                 )
                 return None
 
@@ -540,9 +551,10 @@ class GitHubClient:
     def build_issue_fallback_url(
         owner: str,
         repo: str,
-        title: str,
+        title: str = "",
         body: str = "",
         template: str | None = None,
+        template_params: dict[str, str] | None = None,
     ) -> str:
         """Build a pre-filled GitHub issue URL for manual creation.
 
@@ -550,22 +562,35 @@ class GitHubClient:
         permissions), this builds a URL to the GitHub web interface with the
         issue content pre-filled.
 
-        The URL uses the ``template`` parameter to select the correct issue form,
-        and ``title``/``body`` to pre-fill the corresponding fields. The body is
-        truncated to avoid exceeding browser URL length limits.
+        If *template_params* is provided, the URL uses the GitHub issue-form
+        parameter syntax (``?template=…&field_id=value&…``) so that the fields
+        of the chosen template are auto-filled when the user opens the URL.
+
+        Otherwise falls back to the legacy ``?title=…&body=…`` query string.
+        The body is truncated to avoid exceeding browser URL length limits.
         """
         encoded_title = quote(title)
-
         truncated = body[:FALLBACK_BODY_MAX_LENGTH]
         if len(body) > FALLBACK_BODY_MAX_LENGTH:
             truncated += "\n\n*(Truncated due to URL length limits)*"
         encoded_body = quote(truncated)
 
-        url = f"https://github.com/{owner}/{repo}/issues/new"
-        url += f"?title={encoded_title}"
-        url += f"&body={encoded_body}"
-        if template:
-            url += f"&template={template}"
+        url = f"https://github.com/{quote(owner)}/{quote(repo)}/issues/new"
+
+        if template_params:
+            # Use template parameter syntax so GitHub issue forms auto-fill fields
+            MAX_TEMPLATE_PARAM_LENGTH = 1000
+            parts = [f"template={quote(template or '')}"]
+            for key, value in template_params.items():
+                if len(value) > MAX_TEMPLATE_PARAM_LENGTH:
+                    value = value[:MAX_TEMPLATE_PARAM_LENGTH] + "…"
+                parts.append(f"{quote(key)}={quote(value)}")
+            url += "?" + "&".join(parts)
+        else:
+            # Legacy fallback
+            url += f"?title={encoded_title}&body={encoded_body}"
+            if template:
+                url += f"&template={quote(template)}"
 
         return url
 

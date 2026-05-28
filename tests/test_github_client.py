@@ -1,12 +1,12 @@
 """Unit tests for GitHub API client."""
 
-import pytest
-import json
 import base64
+import json
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.hacs_compatibility_auditor.github_client import GitHubClient
-
+import pytest
 
 # --- Manifest Parsing Tests ---
 
@@ -194,8 +194,6 @@ class TestCaching:
 
     def test_cache_expiry(self):
         """Test that expired cache entries are not returned."""
-        import time
-
         mock_session = MagicMock()
         client = GitHubClient(session=mock_session, token=None)
         client._cache_ttl = 0  # Immediately expires

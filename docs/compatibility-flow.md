@@ -111,9 +111,11 @@ For each INCOMPATIBLE or WARNING package:
        └── Result stored in ai_analysis field (does not override algorithm status)
 ```
 
-The AI analysis can also be triggered on-demand via two services:
+The AI analysis can also be triggered on-demand via several services:
 - `ai_analyze_package` — Full analysis of a package's compatibility
 - `ai_categorize_issue` — Categorize a specific issue (true positive / false positive / etc.)
+- `ai_analyze_all` — Analyze all non-compatible packages at once
+- `ai_confirm_report` — Create a rules repository issue using stored AI analysis
 
 Reports can be submitted to the community rules repository via `report_to_rules`.
 
@@ -204,16 +206,28 @@ Label-matched issues start with a base score of **5**, keyword-matched with **2*
 
 Issues are sorted by priority (highest first), deduplicated by URL, and capped at the **top 20**.
 
-#### Step 5: Scan Release Notes for Breaking Keywords
+#### Step 5: Scan Release Notes for Breaking Keywords and Deprecation
 
-The body text of the 3 most recent releases is scanned for breaking-change indicators:
+The body text of the 3 most recent releases is scanned for breaking-change and deprecation indicators:
 
+**Breaking Change Keywords:**
 - `breaking change`, `breaking-change`, `**breaking**`
 - `## breaking`, `### breaking`
 - `not compatible`, `incompatible`
 - `removed:`, `deprecated:`, `migration required`
+- `end of life`, `use this instead`
+- `merged into`, `migrated to`
 
 If any match is found, `release_breaking = True`.
+
+**Deprecation Keywords (stronger signal):**
+- `end of life`, `deprecated`
+- `use this instead`, `use instead`
+- `merged into`, `migrated to`
+- `superseded`, `please use`
+- `has been deprecated`
+
+If any deprecation keyword is found, `release_deprecated = True` and the package is marked as **INCOMPATIBLE** (not just WARNING), because the package author explicitly states the package is obsolete and users should migrate.
 
 #### Step 6: Determine Final Status
 
@@ -221,22 +235,23 @@ The final status is determined by combining all signals:
 
 ```
 IF manifest NOT compatible with current
-   OR has high-priority issue (priority >= 15):
+   OR has high-priority issue (priority >= 15)
+   OR release_deprecated:
     → INCOMPATIBLE
     → compatible_with_current = False
-    → compatible_with_next = manifest_compatible_next AND no high-priority issues
+    → compatible_with_next = None if ha_next is unknown else manifest_compatible_next AND no high-priority issues AND not release_deprecated
 
 ELIF manifest NOT compatible with next
    OR has medium-priority issue (5 <= priority < 15)
    OR release notes mention breaking changes:
     → WARNING
     → compatible_with_current = manifest_compatible AND no medium-priority issues
-    → compatible_with_next = manifest_compatible_next AND no breaking release notes
+    → compatible_with_next = None if ha_next is unknown else manifest_compatible_next AND no breaking release notes
 
 ELSE:
     → COMPATIBLE
     → compatible_with_current = True
-    → compatible_with_next = True
+    → compatible_with_next = None if ha_next is unknown else True
 ```
 
 **Status summary:**

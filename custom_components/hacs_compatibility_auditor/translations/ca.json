@@ -11,6 +11,13 @@
           "github_timeout": "Temps d'espera de consultes GitHub (segons)",
           "github_retries": "Reintents de consultes GitHub"
         }
+      },
+      "ai_setup": {
+        "title": "Configurar l'anàlisi amb IA",
+        "description": "L'anàlisi amb IA pot ajudar-te a determinar si els problemes de compatibilitat detectats per l'algoritme són reals. Pots configurar-ho ara o més tard des de les opcions de la integració.",
+        "data": {
+          "setup_ai": "Configurar l'anàlisi amb IA ara"
+        }
       }
     },
     "error": {
@@ -27,7 +34,7 @@
     "step": {
       "init": {
         "title": "Opcions de HACS Compatibility Auditor",
-        "description": "Ajusta la configuració d'auditoria.",
+        "description": "Ajusta la configuració d'auditoria. Les regles comunitàries ajuden a reduir els falsos positius proporcionant dades de compatibilitat curades.{extra_warning}",
         "data": {
           "github_token": "Token de GitHub (opcional)",
           "check_interval": "Interval de comprovació (hores)",
@@ -94,15 +101,15 @@
   "services": {
     "check_now": {
       "name": "Forçar comprovació",
-      "description": "Força una re-comprovació immediata de la compatibilitat de tots els paquets HACS."
+      "description": "⚠️ Força una re-comprovació immediata de TOTS els paquets HACS. Elimina tota la informació en memòria cau i re-analitza totes les entitats des de zero. Pot tardar diversos minuts i consumeix quota de l'API de GitHub."
     },
     "check_package": {
       "name": "Comprovar paquet",
-      "description": "Comprova la compatibilitat d'un paquet HACS específic per repositori (format owner/repo).",
+      "description": "Comprova la compatibilitat d'un paquet HACS específic seleccionant el seu sensor.",
       "fields": {
-        "repository": {
-          "name": "Repositori",
-          "description": "Nom complet del repositori (ex. 'home-assistant/core')"
+        "entity_id": {
+          "name": "Paquet HACS",
+          "description": "Selecciona el sensor del paquet que vols comprovar"
         }
       }
     },
@@ -110,13 +117,13 @@
       "name": "Analitzar amb IA",
       "description": "Utilitza un proveïdor d'IA per analitzar si un paquet HACS té problemes reals de compatibilitat.",
       "fields": {
-        "repository": {
-          "name": "Repositori",
-          "description": "Nom complet del repositori (ex. 'owner/repo')"
+        "entity_id": {
+          "name": "Paquet HACS",
+          "description": "Selecciona el sensor del paquet que vols analitzar"
         },
         "provider": {
           "name": "Proveïdor IA",
-          "description": "Nom del proveïdor d'IA a utilitzar (opcional, usa el primer configurat)"
+          "description": "Proveïdor d'IA a utilitzar (auto = primer proveïdor configurat)"
         }
       }
     },
@@ -134,13 +141,13 @@
         },
         "provider": {
           "name": "Proveïdor IA",
-          "description": "Nom del proveïdor d'IA a utilitzar (opcional)"
+          "description": "Proveïdor d'IA a utilitzar (opcional, utilitza el primer configurat)"
         }
       }
     },
     "report_to_rules": {
       "name": "Reportar a regles comunitàries",
-      "description": "Crea una incidència al repositori de regles comunitàries amb l'anàlisi d'IA.",
+      "description": "Genera una URL per crear una incidència al repositori de regles comunitàries amb l'anàlisi d'IA. Els camps de la plantilla s'omplen automàticament en obrir l'enllaç.",
       "fields": {
         "repository": {
           "name": "Repositori",
@@ -166,15 +173,33 @@
     },
     "ai_confirm_report": {
       "name": "Confirmar i reportar amb IA",
-      "description": "Crea una incidència al repositori de regles usant l'anàlisi d'IA emmagatzemada per a un paquet.",
+      "description": "Genera una URL per crear una incidència al repositori de regles usant l'anàlisi d'IA emmagatzemada per a un paquet. Els camps de la plantilla s'omplen automàticament en obrir l'enllaç.",
       "fields": {
-        "repository": {
-          "name": "Repositori",
-          "description": "Nom complet del repositori (ex. 'owner/repo')"
+        "entity_id": {
+          "name": "Paquet HACS",
+          "description": "Selecciona el sensor del paquet del qual vols confirmar el reporte"
+        },
+        "issue_number": {
+          "name": "Número d'incidència",
+          "description": "Número de la incidència a GitHub (requerit per a plantilla de fals positiu)"
         },
         "action": {
           "name": "Acció",
-          "description": "Acció a prendre (opcional, es deriva del veredicte: not_affected->add_false_positive, affected->report_incompatibility)"
+          "description": "Acció a prendre: add_false_positive o report_incompatibility (opcional, es deriva del veredicte de la IA si es deixa buit)"
+        }
+      }
+    },
+    "ai_analyze_all": {
+      "name": "Analitzar tot amb IA",
+      "description": "Executa anàlisi amb IA sobre tots els paquets que no estiguin en estat compatible.",
+      "fields": {
+        "provider": {
+          "name": "Proveïdor IA",
+          "description": "Proveïdor d'IA a utilitzar (auto = primer proveïdor configurat)"
+        },
+        "use_cached_only": {
+          "name": "Utilitzar només memòria cau",
+          "description": "Si s'activa, analitza només amb la informació en memòria cau sense consultar GitHub de nou. El resultat podria ser inexacte si la memòria cau està obsoleta."
         }
       }
     }

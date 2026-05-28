@@ -1,7 +1,10 @@
 """Config flow for HACS Compatibility Auditor integration."""
 
+import ipaddress
 import logging
+import re
 from typing import Any
+import urllib.parse
 
 import aiohttp
 import voluptuous as vol
@@ -85,6 +88,61 @@ async def _validate_hacs(hass: HomeAssistant) -> bool:
         return False
 
 
+def _is_safe_url(url: str, provider_type: str) -> tuple[bool, str | None]:
+    """Validate that base_url uses https and does not target private/reserved IPs.
+
+    Ollama is commonly run on LAN/Local networks — allow private and link-local IPs
+    as well as localhost for Ollama.  All other providers must use https and must
+    not resolve to private/reserved addresses.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return False, "invalid_url_format"
+
+    if not parsed.scheme:
+        return False, "https_required"
+
+    hostname = parsed.hostname or ""
+    if not hostname:
+        return False, "missing_hostname"
+
+    # Validate hostname format to prevent injection
+    # Allow alphanumeric, hyphens, dots, and underscores
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-_.]*[a-zA-Z0-9]$", hostname):
+        return False, "invalid_hostname_format"
+
+    # Block suspicious hostnames
+    if hostname in ("localhost", "127.0.0.1", "::1"):
+        if provider_type != PROVIDER_TYPE_OLLAMA:
+            return False, "localhost_not_allowed"
+
+    # Ollama: allow localhost, private IPs, link-local, and plain hostnames (LAN)
+    if provider_type == PROVIDER_TYPE_OLLAMA:
+        try:
+            addr = ipaddress.ip_address(hostname)
+            # Block only truly reserved ranges; allow private and link-local
+            if addr.is_reserved and not (addr.is_private or addr.is_link_local):
+                return False, "ollama_reserved_ip_not_allowed"
+        except ValueError:
+            pass  # hostname is a domain name (e.g. ollama.local) — allow
+        return True, None
+
+    # Non-Ollama providers: require HTTPS
+    if parsed.scheme != "https":
+        return False, "https_required"
+
+    # Block private / reserved / loopback / link-local IPs for cloud providers
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_reserved or addr.is_loopback or addr.is_link_local:
+            return False, "private_ip_not_allowed"
+    except ValueError:
+        pass  # hostname is a domain name, not an IP — allow
+
+    return True, None
+
+
 class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for HACS Compatibility Auditor."""
 
@@ -94,6 +152,11 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
         self._ai_providers: list[dict[str, Any]] = []
         self._pending_options: dict[str, Any] = {}
         self._edit_provider: dict[str, Any] | None = None
+
+    def _init_pending_options(self) -> None:
+        """Initialize pending options if not already done."""
+        if not hasattr(self, "_pending_options"):
+            self._pending_options = {}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
@@ -177,6 +240,16 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
         current_options = self.config_entry.options
         current_data = self.config_entry.data
 
+        # Build warning message if AI is enabled but no providers configured
+        ai_enabled = current_options.get(CONF_AI_ENABLED, DEFAULT_AI_ENABLED)
+        ai_providers = current_options.get(CONF_AI_PROVIDERS, [])
+        description_extra = ""
+        if ai_enabled and not ai_providers:
+            description_extra = (
+                "\n\n⚠️ **AI analysis is enabled but no AI providers are configured. "
+                "Configure at least one provider to use AI features.**"
+            )
+
         data_schema = vol.Schema(
             {
                 vol.Optional(
@@ -238,6 +311,7 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=data_schema,
             errors=errors,
+            description_placeholders={"extra_warning": description_extra or ""},
         )
 
     async def async_step_ai_providers(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -336,21 +410,26 @@ class HacsCompatibilityAuditorOptionsFlow(config_entries.OptionsFlow):
                     CONF_AI_TEMPERATURE: temperature,
                 }
 
-                current_providers = list(self.config_entry.options.get(CONF_AI_PROVIDERS, []))
-
-                if edit_mode:
-                    old_name = self._edit_provider.get(CONF_AI_PROVIDER_NAME)
-                    for i, p in enumerate(current_providers):
-                        if p.get(CONF_AI_PROVIDER_NAME) == old_name:
-                            current_providers[i] = provider_config
-                            break
-                    self._edit_provider = None
+                # Validate base_url to prevent SSRF
+                url_ok, url_err = _is_safe_url(base_url, provider_type)
+                if not url_ok:
+                    errors["base"] = url_err or "invalid_url"
                 else:
-                    current_providers.append(provider_config)
+                    current_providers = list(self.config_entry.options.get(CONF_AI_PROVIDERS, []))
 
-                options = dict(self._pending_options) if hasattr(self, "_pending_options") else {}
-                options[CONF_AI_PROVIDERS] = current_providers
-                return self.async_create_entry(title="", data=options)
+                    if edit_mode:
+                        old_name = self._edit_provider.get(CONF_AI_PROVIDER_NAME)
+                        for i, p in enumerate(current_providers):
+                            if p.get(CONF_AI_PROVIDER_NAME) == old_name:
+                                current_providers[i] = provider_config
+                                break
+                        self._edit_provider = None
+                    else:
+                        current_providers.append(provider_config)
+
+                    options = dict(self._pending_options) if hasattr(self, "_pending_options") else {}
+                    options[CONF_AI_PROVIDERS] = current_providers
+                    return self.async_create_entry(title="", data=options)
 
         # Determine defaults based on edit mode or new provider
         provider_type_default = defaults.get(CONF_AI_PROVIDER_TYPE, PROVIDER_TYPE_OPENAI)
@@ -416,18 +495,15 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
                 if not valid:
                     errors["base"] = error or "cannot_connect"
                 else:
-                    return self.async_create_entry(
-                        title="HCA",
-                        data={
-                            CONF_GITHUB_TOKEN: token or "",
-                        },
-                        options={
-                            CONF_CHECK_INTERVAL: user_input.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL),
-                            CONF_CACHE_HOURS: user_input.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS),
-                            CONF_GITHUB_TIMEOUT: user_input.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT),
-                            CONF_GITHUB_RETRIES: user_input.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
-                        },
-                    )
+                    # Store validated options and ask about AI setup before creating entry
+                    self._pending_options = {
+                        CONF_GITHUB_TOKEN: token or "",
+                        CONF_CHECK_INTERVAL: user_input.get(CONF_CHECK_INTERVAL, DEFAULT_CHECK_INTERVAL),
+                        CONF_CACHE_HOURS: user_input.get(CONF_CACHE_HOURS, DEFAULT_CACHE_HOURS),
+                        CONF_GITHUB_TIMEOUT: user_input.get(CONF_GITHUB_TIMEOUT, DEFAULT_GITHUB_TIMEOUT),
+                        CONF_GITHUB_RETRIES: user_input.get(CONF_GITHUB_RETRIES, DEFAULT_GITHUB_RETRIES),
+                    }
+                    return await self.async_step_ai_setup()
 
         data_schema = vol.Schema(
             {
@@ -449,6 +525,46 @@ class HacsCompatibilityAuditorConfigFlow(config_entries.ConfigFlow, domain=DOMAI
             step_id="user",
             data_schema=data_schema,
             errors=errors,
+        )
+
+    async def async_step_ai_setup(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Ask the user whether to configure AI providers now."""
+        if user_input is not None:
+            if user_input.get("setup_ai", False):
+                # User wants to configure AI — enable AI, providers set up later in options
+                options = dict(self._pending_options)
+                options[CONF_AI_ENABLED] = True
+                options[CONF_AI_AUTO_ANALYZE] = False
+                options[CONF_AI_PROVIDERS] = []
+                return self.async_create_entry(
+                    title="HACS Compatibility Auditor",
+                    data={
+                        CONF_GITHUB_TOKEN: options.get(CONF_GITHUB_TOKEN, ""),
+                    },
+                    options=options,
+                )
+            # User skipped AI — create entry with pending options
+            options = dict(self._pending_options)
+            options[CONF_AI_ENABLED] = user_input.get(CONF_AI_ENABLED, user_input.get("ai_enabled", DEFAULT_AI_ENABLED))
+            options[CONF_AI_AUTO_ANALYZE] = user_input.get(CONF_AI_AUTO_ANALYZE, DEFAULT_AI_AUTO_ANALYZE)
+            options[CONF_AI_PROVIDERS] = user_input.get(CONF_AI_PROVIDERS, [])
+            return self.async_create_entry(
+                title="HACS Compatibility Auditor",
+                data={
+                    CONF_GITHUB_TOKEN: options.get(CONF_GITHUB_TOKEN, ""),
+                },
+                options=options,
+            )
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional("setup_ai", default=False): bool,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="ai_setup",
+            data_schema=data_schema,
         )
 
     @staticmethod
