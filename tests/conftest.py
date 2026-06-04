@@ -89,10 +89,15 @@ ha.components.sensor.SensorStateClass.MEASUREMENT = "measurement"
 ha.const.EntityCategory = MagicMock()
 ha.const.EntityCategory.DIAGNOSTIC = "diagnostic"
 
+# Exceptions
+ha.exceptions.ConfigEntryNotReady = type("ConfigEntryNotReady", (Exception,), {})
+ha.exceptions.HomeAssistantError = type("HomeAssistantError", (Exception,), {})
+
 # Register in sys.modules
 sys.modules["homeassistant"] = ha
 sys.modules["homeassistant.const"] = ha.const
 sys.modules["homeassistant.core"] = ha.core
+sys.modules["homeassistant.exceptions"] = ha.exceptions
 sys.modules["homeassistant.config_entries"] = ha.config_entries
 sys.modules["homeassistant.helpers"] = ha.helpers
 sys.modules["homeassistant.helpers.entity_registry"] = ha.helpers.entity_registry

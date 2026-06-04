@@ -82,19 +82,45 @@ class CacheManager:
             )
             return None
 
-        # Check HA version match (if HA changed, invalidate)
+        # Check HA version match — only invalidate on major version change
+        # (e.g. 2024.x → 2025.x) so minor bumps don't wipe the cache.
         entry_ha = entry.get("ha_version", "")
-        if ha_version and entry_ha and entry_ha != ha_version:
-            _LOGGER.debug(
-                "Cache invalidated for %s (HA version changed: %s -> %s)",
-                package_full_name,
-                entry_ha,
-                ha_version,
-            )
-            return None
+        if ha_version and entry_ha and ha_version != entry_ha:
+            if self._major_version_changed(entry_ha, ha_version):
+                _LOGGER.debug(
+                    "Cache invalidated for %s (HA major version changed: %s -> %s)",
+                    package_full_name,
+                    entry_ha,
+                    ha_version,
+                )
+                return None
 
         _LOGGER.debug("Cache HIT for %s", package_full_name)
         return entry.get("result")
+
+    def get_all_valid(self, ha_version: str) -> list[dict[str, Any]]:
+        """Return all valid cached results for the given HA version."""
+        results: list[dict[str, Any]] = []
+        for pkg_name in self._cache:
+            entry = self.get_valid_entry(pkg_name, ha_version)
+            if entry is not None:
+                results.append(entry)
+        return results
+
+    @staticmethod
+    def _major_version_changed(old_version: str, new_version: str) -> bool:
+        """Check if the major version component changed (e.g. 2024.x → 2025.x).
+
+        Returns True when the versions are meaningfully different.
+        Returns False for minor/patch bumps (e.g. 2024.6 → 2024.7).
+        """
+        try:
+            old_major = old_version.split(".", maxsplit=1)[0]
+            new_major = new_version.split(".", maxsplit=1)[0]
+        except IndexError, AttributeError:
+            return True  # can't parse → conservatively invalidate
+        else:
+            return old_major != new_major
 
     def set_entry(
         self,

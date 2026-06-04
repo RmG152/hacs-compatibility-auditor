@@ -40,8 +40,14 @@ def _redact_tokens(text: str) -> str:
     """Redact common API token patterns from text using non-greedy patterns."""
     # More comprehensive patterns to catch various token formats
     patterns = [
-        (r'["\']?token["\']?\s*[:=]\s*["\']?[a-zA-Z0-9\-_\.]{20,}["\']?', '"token":"[REDACTED]"'),
-        (r'["\']?api_key["\']?\s*[:=]\s*["\']?[a-zA-Z0-9\-_\.]{20,}["\']?', '"api_key":"[REDACTED]"'),
+        (
+            r'["\']?token["\']?\s*[:=]\s*["\']?[a-zA-Z0-9\-_\.]{20,}["\']?',
+            '"token":"[REDACTED]"',
+        ),
+        (
+            r'["\']?api_key["\']?\s*[:=]\s*["\']?[a-zA-Z0-9\-_\.]{20,}["\']?',
+            '"api_key":"[REDACTED]"',
+        ),
         (r"Bearer\s+[a-zA-Z0-9\-_\.]{20,}", "Bearer [REDACTED]"),
         (r"sk-[a-zA-Z0-9]{32,}", "[REDACTED]"),  # OpenAI keys
         (r"AIza[a-zA-Z0-9\-_]{35}", "[REDACTED]"),  # Google API keys

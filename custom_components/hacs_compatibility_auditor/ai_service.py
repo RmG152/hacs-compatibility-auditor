@@ -87,7 +87,10 @@ class AIManager:
             provider = self.get_provider(provider_name)
             if provider:
                 return provider
-            _LOGGER.warning("AI provider '%s' not found, falling back to first available", provider_name)
+            _LOGGER.warning(
+                "AI provider '%s' not found, falling back to first available",
+                provider_name,
+            )
         return self.get_first_enabled()
 
     async def analyze_package(

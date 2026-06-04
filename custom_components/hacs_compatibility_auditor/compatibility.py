@@ -227,7 +227,11 @@ class CompatibilityChecker:
             if self._rules:
                 false_positives = self._rules.get_false_positives(package.full_name)
             if false_positives:
-                _LOGGER.debug("Filtering %d false positive issues for %s", len(false_positives), package.full_name)
+                _LOGGER.debug(
+                    "Filtering %d false positive issues for %s",
+                    len(false_positives),
+                    package.full_name,
+                )
                 issues = [i for i in issues if i.number not in false_positives]
 
             # Recalculate priority with overrides (if rules available)

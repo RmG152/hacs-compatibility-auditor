@@ -205,19 +205,36 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(hours=self._check_interval),
         )
 
-    async def _async_setup(self) -> None:
-        """Set up the GitHub client, checker, and cache."""
+    async def async_setup_cache(self) -> None:
+        """Set up the persistent cache (critical path — must never fail)."""
+        if self._cache_manager is not None:
+            return
+        _LOGGER.debug("Initializing CacheManager (ttl=%dh)", self._cache_hours)
+        self._cache_manager = CacheManager(self.hass, ttl_hours=self._cache_hours)
+        await self._cache_manager.async_load()
+        _LOGGER.info("Loaded %d cached entries from disk", self._cache_manager.entry_count)
+
+    async def _async_setup_network(self) -> None:
+        """Set up network-dependent components (GitHub, checker, rules, AI).
+
+        This is separated from cache setup so that cache is always available
+        even when the network is down.  Failures here are non-fatal; the
+        coordinator will retry on the next update cycle.
+        """
         if self._github_client is not None:
-            _LOGGER.debug("Coordinator already set up, skipping")
+            _LOGGER.debug("Network components already set up, skipping")
             return
 
         _LOGGER.debug(
-            "Setting up GitHub client (timeout=%ds, retries=%d, cache_ttl=%dh, batch_size=%d)",
+            "Setting up network components (timeout=%ds, retries=%d, batch_size=%d)",
             self._github_timeout,
             self._github_retries,
-            self._cache_hours,
             self._batch_size,
         )
+
+        # Set HA version early so rules client uses the correct value
+        self._data.ha_current = ha_version
+
         session = async_create_clientsession(self.hass)
         self._github_client = GitHubClient(
             session=session,
@@ -226,12 +243,6 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             retries=self._github_retries,
         )
         self._github_client.update_cache_ttl(self._cache_hours * 3600)
-
-        # Initialize persistent cache
-        _LOGGER.debug("Initializing CacheManager (ttl=%dh)", self._cache_hours)
-        self._cache_manager = CacheManager(self.hass, ttl_hours=self._cache_hours)
-        await self._cache_manager.async_load()
-        _LOGGER.info("Loaded %d cached entries from disk", self._cache_manager.entry_count)
 
         # Initialize rules client (if enabled)
         rules_client = None
@@ -297,17 +308,32 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             return await self._async_update_data_impl(was_forced)
 
     async def _async_update_data_impl(self, was_forced: bool = False) -> dict[str, Any]:
-        """Internal implementation of data update with batch support."""
+        """Internal implementation of data update with batch support.
+
+        Strategy:
+        1. Ensure cache is loaded (always succeeds).
+        2. Load cached results into memory immediately (sensors get data fast).
+        3. Set up network components (may fail — non-fatal).
+        4. Enumerate HACS packages and separate cached vs pending.
+        5. Return cached data immediately; process pending in background.
+        """
 
         scan_start = dt.now(UTC)
         _LOGGER.info("=== Starting HACS compatibility scan ===")
 
         try:
-            if not self._github_client:
-                _LOGGER.debug("GitHub client not initialized, running setup")
-                await self._async_setup()
+            # Phase 1: Ensure cache is loaded (critical, never fails)
+            await self.async_setup_cache()
 
-            # Step 1: Get HA versions
+            # Phase 2: Set up network components (may fail — non-fatal)
+            if not self._github_client:
+                _LOGGER.debug("GitHub client not initialized, running network setup")
+                try:
+                    await self._async_setup_network()
+                except (OSError, ValueError, TimeoutError) as exc:
+                    _LOGGER.warning("Network setup failed (%s) — will use cached data only", exc)
+
+            # Phase 3: Get HA versions
             _LOGGER.debug("Step 1/4: Retrieving Home Assistant versions")
             await self._update_ha_versions()
             if self._rules_client and self._data.ha_current:
@@ -482,7 +508,17 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                     self._data.packages_total,
                 )
             elif not self._checker:
-                _LOGGER.warning("CompatibilityChecker not available, skipping checks")
+                # Network setup failed — try to serve from cache
+                _LOGGER.warning("CompatibilityChecker not available, attempting cache-only mode")
+                if self._cache_manager and self._data.packages:
+                    current_ha = self._data.ha_current
+                    for pkg in self._data.packages:
+                        cached = self._cache_manager.get_valid_entry(pkg.full_name, current_ha)
+                        if cached is not None:
+                            self._data.results.append(cached)
+                    self._data.packages_total = len(self._data.packages)
+                else:
+                    _LOGGER.warning("No cache available and checker not initialized")
 
             # Step 4: Compute summary stats
             self._recompute_stats()
@@ -521,10 +557,35 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         tasks = [self._checker.check_package(pkg, self._data.ha_current, self._data.ha_next) for pkg in batch]
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for result in batch_results:
+        for i, result in enumerate(batch_results):
             if isinstance(result, Exception):
-                _LOGGER.error("Error processing package in batch: %s", result)
+                _LOGGER.error(
+                    "Error processing package %s: %s",
+                    batch[i].full_name,
+                    result,
+                )
+                # Create an "unknown" result so the sensor still exists
+                # and the package is not silently dropped.
+                result_dict = {
+                    "name": batch[i].name,
+                    "repository": batch[i].full_name,
+                    "type": batch[i].category,
+                    "installed_version": batch[i].installed_version,
+                    "latest_version": "",
+                    "compatible_with_current": None,
+                    "compatible_with_next": None,
+                    "status": STATUS_UNKNOWN,
+                    "issues_relevant": [],
+                    "manifest_ha_requirement": "",
+                    "last_checked": dt.now(tz=UTC).isoformat(),
+                    "error": str(result),
+                    "reason": "Error during compatibility check",
+                }
+                self._data.results.append(result_dict)
+                if self._cache_manager:
+                    self._cache_manager.set_entry(batch[i].full_name, result_dict, current_ha)
                 continue
+
             if isinstance(result, CompatibilityResult):
                 result_dict = result.to_dict()
                 # AI auto-analyze for incompatible/warning packages
@@ -535,6 +596,7 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
                 ):
                     await self._ai_analyze_result(result, result_dict)
                 self._data.results.append(result_dict)
+                # Save each package individually so progress survives restarts
                 if self._cache_manager:
                     self._cache_manager.set_entry(
                         result.package.full_name,
@@ -663,6 +725,34 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
         self._data.compatible_count = sum(1 for r in self._data.results if r.get("status") == STATUS_COMPATIBLE)
         self._data.unknown_count = sum(1 for r in self._data.results if r.get("status") == STATUS_UNKNOWN)
 
+    def load_from_cache(self) -> bool:
+        """Load cached results into memory so sensors have data immediately.
+
+        Called when the first refresh fails but the cache is available.
+        Returns True if any cached entries were loaded.
+        """
+        if not self._cache_manager:
+            return False
+
+        current_ha = ha_version
+        self._data.ha_current = current_ha
+        self._data.packages_total = 0
+
+        loaded = 0
+        for pkg in self._data.packages:
+            cached = self._cache_manager.get_valid_entry(pkg.full_name, current_ha)
+            if cached is not None:
+                self._data.results.append(cached)
+                loaded += 1
+
+        if loaded:
+            self._data.packages_total = len(self._data.packages)
+            self._recompute_stats()
+            self._data.last_scan = dt.now(UTC).isoformat()
+            self._data.scan_in_progress = False
+            _LOGGER.info("Loaded %d cached results (network unavailable)", loaded)
+        return loaded > 0
+
     async def _update_ha_versions(self) -> None:
         """Update HA current and next versions."""
         self._data.ha_current = ha_version
@@ -714,7 +804,9 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 _LOGGER.warning("Could not determine next HA version: %s", exc)
         else:
-            _LOGGER.warning("GitHub client not available, cannot determine next HA version")
+            _LOGGER.debug(
+                "GitHub client not available — next HA version unknown (will be resolved when network is available)"
+            )
 
     @staticmethod
     def _parse_simple_version(version_str: str) -> Any | None:
@@ -744,6 +836,11 @@ class HacsCompatibilityCoordinator(DataUpdateCoordinator):
     def github_client(self) -> GitHubClient | None:
         """Return the GitHub client instance."""
         return self._github_client
+
+    @property
+    def cache_manager(self) -> CacheManager | None:
+        """Return the cache manager instance."""
+        return self._cache_manager
 
     async def async_analyze_package(
         self,

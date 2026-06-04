@@ -253,7 +253,11 @@ class TestGeminiProvider:
         assert headers["x-goog-api-key"] == "test-key-123"
 
     def test_build_request_url(self):
-        config = _make_config(PROVIDER_TYPE_GEMINI, base_url="https://gemini.test/v1beta", model="gemini-2.0-flash")
+        config = _make_config(
+            PROVIDER_TYPE_GEMINI,
+            base_url="https://gemini.test/v1beta",
+            model="gemini-2.0-flash",
+        )
         provider = GeminiProvider(config)
         url = provider._build_request_url()
         assert "gemini.test/v1beta/models/gemini-2.0-flash:generateContent" in url

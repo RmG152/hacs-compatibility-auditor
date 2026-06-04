@@ -10,7 +10,9 @@ import logging
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, UnknownEntry
+from homeassistant.const import __version__ as ha_version
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
 from .const import (
@@ -41,12 +43,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Initialize coordinator
     coordinator = HacsCompatibilityCoordinator(hass, entry)
 
-    # Store coordinator in hass data
+    # Ensure cache is loaded BEFORE first refresh — this is critical so
+    # sensors always have data even when the network is down.
+    try:
+        await coordinator.async_setup_cache()
+    except (OSError, ValueError) as exc:
+        _LOGGER.warning("Cache setup failed: %s — starting without cached data", exc)
+
+    # Set HA version early so cache lookups use the correct version
+    coordinator.data_container.ha_current = ha_version
+
+    # Store coordinator in hass data (must happen before first refresh so
+    # listeners can find it)
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Perform first data refresh — with batching + cache, this returns quickly
-    await coordinator.async_config_entry_first_refresh()
+    # Perform first data refresh — may raise ConfigEntryNotReady
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryNotReady:
+        # First refresh failed (likely network).  If we have cached data,
+        # use it and keep the integration alive; otherwise fail as normal.
+        if coordinator.cache_manager and coordinator.cache_manager.entry_count > 0:
+            _LOGGER.warning(
+                "First refresh failed but cache has %d entries — using cached data",
+                coordinator.cache_manager.entry_count,
+            )
+            coordinator.load_from_cache()
+            coordinator.async_set_updated_data(coordinator.data_container.to_dict())
+        else:
+            raise
 
     # Set up platforms (sensors)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

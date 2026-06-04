@@ -148,7 +148,14 @@ class TestAIManager:
             ha_next="2026.6.0",
             manifest_ha=">=2026.1.0",
             current_status="incompatible",
-            issues=[{"title": "Bug", "priority": 20, "labels": ["breaking"], "body": "It broke"}],
+            issues=[
+                {
+                    "title": "Bug",
+                    "priority": 20,
+                    "labels": ["breaking"],
+                    "body": "It broke",
+                }
+            ],
         )
         assert result.verdict == "affected"
         assert result.reasoning == "Has breaking issues"
@@ -240,7 +247,12 @@ class TestBuildPrompts:
             manifest_ha=">=2026.1.0",
             current_status="warning",
             issues=[
-                {"title": "Breaking change", "priority": 25, "labels": ["breaking-change"], "body": "HA changed API"}
+                {
+                    "title": "Breaking change",
+                    "priority": 25,
+                    "labels": ["breaking-change"],
+                    "body": "HA changed API",
+                }
             ],
         )
         assert "Test Pkg" in user

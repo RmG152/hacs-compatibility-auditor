@@ -169,7 +169,11 @@ class GitHubClient:
             return cached
 
         safe_url = re.sub(r"[?&][^=]*=[^&]*", "[REDACTED]", url)
-        _LOGGER.debug("GitHub API request: %s (rate_limit_remaining=%d)", safe_url, self._rate_limit_remaining)
+        _LOGGER.debug(
+            "GitHub API request: %s (rate_limit_remaining=%d)",
+            safe_url,
+            self._rate_limit_remaining,
+        )
 
         last_error: Exception | None = None
 
@@ -532,8 +536,18 @@ class GitHubClient:
 
                 error_text = await resp.text()
                 # Sanitize error text before logging
-                sanitized_error = re.sub(r"\"[^\"]*token[^\"]*\"", '"[REDACTED]"', error_text, flags=re.IGNORECASE)
-                sanitized_error = re.sub(r"\"[^\"]*key[^\"]*\"", '"[REDACTED]"', sanitized_error, flags=re.IGNORECASE)
+                sanitized_error = re.sub(
+                    r"\"[^\"]*token[^\"]*\"",
+                    '"[REDACTED]"',
+                    error_text,
+                    flags=re.IGNORECASE,
+                )
+                sanitized_error = re.sub(
+                    r"\"[^\"]*key[^\"]*\"",
+                    '"[REDACTED]"',
+                    sanitized_error,
+                    flags=re.IGNORECASE,
+                )
                 _LOGGER.error(
                     "Failed to create issue on %s/%s: HTTP %d - %s",
                     owner,
