@@ -190,6 +190,8 @@ from .const import DOMAIN
 Use Home Assistant's config entry exceptions where appropriate:
 - `ConfigEntryNotReady` - Service not available (e.g., timeout)
 
+Persistent cache failure: if the persistent cache fails to load or is corrupted on startup, log a warning, clear the cache file atomically, continue startup with the in-memory cache only, and surface an integration-level diagnostic sensor.
+
 ```python
 from homeassistant.exceptions import ConfigEntryNotReady
 
@@ -209,7 +211,7 @@ except ConfigEntryNotReady:
 - Use voluptuous schemas for data validation
 - OptionsFlow for managing AI providers (add/edit/remove)
 - Always handle errors gracefully with user-friendly messages
-- Validate URLs with `_is_safe_url()` to prevent SSRF
+- Validate URLs with `_is_safe_url(url)`: allow only `https` schemes, disallow localhost and private IP ranges, return False for malformed URLs; add unit tests covering edge cases
 
 ### Entity Implementation
 
@@ -221,11 +223,12 @@ except ConfigEntryNotReady:
 
 ### API Calls
 
-- Use `aiohttp.ClientSession` (not httpx) for all HTTP calls
-- Always set explicit timeouts
-- Handle rate limiting (GitHub X-RateLimit headers)
-- Implement retry logic with exponential backoff
-- Handle all exceptions gracefully - never let exceptions propagate to HA
+Priority checklist for all network calls:
+1. Use `aiohttp.ClientSession` (not httpx) with `aiohttp.ClientTimeout(total=60, connect=10)`
+2. Retry on transient 5xx/connection errors: up to 5 attempts, base backoff 1s, exponential factor 2, max backoff 30s, full jitter
+3. Honor rate limits: read `X-RateLimit-Reset` headers; on HTTP 429, retry with exponential backoff up to 5 times, pause requests to that host until reset epoch + 1s, and set a sensor attribute `rate_limited_until` to that timestamp
+4. Cache responses: in-memory TTL 60s, persistent disk TTL 12h (configurable in integration options); evict LRU entries from persistent cache when it exceeds 1000 entries
+5. Handle all exceptions gracefully - never let exceptions propagate to HA
 
 ### Async Patterns
 
@@ -252,7 +255,7 @@ When creating new platform/module files:
 
 ### Working with Translations
 
-**For custom integrations, use `translations/<locale>.json` format (NOT `strings.json`):**
+**Migrate to `translations/<locale>.json` format when possible; maintain `strings.json` only while legacy consumers exist.**
 
 ```
 translations/
@@ -320,7 +323,7 @@ When adding tests:
 **Coordinator pattern:** The `HacsCompatibilityCoordinator` extends `DataUpdateCoordinator` and manages:
 - Batch processing of HACS packages (configurable batch_size)
 - Background scanning with progress tracking
-- Two-layer caching (in-memory + persistent disk)
+- Two-layer caching: in-memory (default TTL 60s) + persistent disk (default TTL 12h, both configurable in integration options); evict LRU entries from persistent cache when it exceeds 1000 entries
 - Community rules integration
 - AI analysis orchestration
 
@@ -342,6 +345,11 @@ When adding tests:
 - Google Gemini
 - Anthropic Claude
 - Ollama (local, no API key)
+
+AI provider error handling and failover:
+- If a provider returns 401/403, mark it disabled and notify via logs
+- On 429/5xx, retry per the API Calls retry policy, then failover to the next configured provider; mark the failing provider as `rate_limited` and surface a sensor attribute with the cooldown expiry
+- If AI output fails schema validation, treat the result as `AI_UNTRUSTED` and include the raw output in debug logs only
 
 ## Common Issues and Solutions
 
