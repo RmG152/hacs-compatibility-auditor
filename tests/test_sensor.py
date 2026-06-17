@@ -116,7 +116,12 @@ class TestPackageSensor:
             "compatible_with_current": False,
             "compatible_with_next": False,
             "status": STATUS_INCOMPATIBLE,
-            "issues_relevant": [{"title": "Broken after HA update", "url": "https://github.com/test/broken/issues/1"}],
+            "issues_relevant": [
+                {
+                    "title": "Broken after HA update",
+                    "url": "https://github.com/test/broken/issues/1",
+                }
+            ],
             "manifest_ha_requirement": ">=2025.1.0",
             "last_checked": "2024-06-01T00:00:00",
             "error": "",

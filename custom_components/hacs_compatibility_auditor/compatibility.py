@@ -96,6 +96,40 @@ class CompatibilityChecker:
         """Check if a package should be ignored."""
         return package.full_name in self._ignore_list or package.name in self._ignore_list
 
+    def _check_release_notes(
+        self,
+        releases: list | None,
+        package_full_name: str,
+    ) -> tuple[bool, bool, list[str]]:
+        """Scan release notes for breaking change and deprecation keywords."""
+        release_breaking = False
+        release_deprecated = False
+        matching_releases: list[str] = []
+        if releases:
+            for release in releases[:3]:
+                body = release.body or ""
+                if self._contains_breaking_keywords(body):
+                    release_breaking = True
+                    _LOGGER.debug(
+                        "Breaking keywords found in release %s for %s",
+                        release.tag_name,
+                        package_full_name,
+                    )
+                    snippet = f"{release.tag_name}: {body[:500]}"
+                    matching_releases.append(snippet)
+                if self._contains_deprecation_keywords(body):
+                    release_deprecated = True
+                    _LOGGER.debug(
+                        "Deprecation keywords found in release %s for %s",
+                        release.tag_name,
+                        package_full_name,
+                    )
+                    snippet = f"{release.tag_name}: {body[:500]}"
+                    matching_releases.append(snippet)
+                    if len(matching_releases) >= 3:
+                        break
+        return release_breaking, release_deprecated, matching_releases
+
     async def check_package(
         self,
         package: HacsPackage,
@@ -227,7 +261,11 @@ class CompatibilityChecker:
             if self._rules:
                 false_positives = self._rules.get_false_positives(package.full_name)
             if false_positives:
-                _LOGGER.debug("Filtering %d false positive issues for %s", len(false_positives), package.full_name)
+                _LOGGER.debug(
+                    "Filtering %d false positive issues for %s",
+                    len(false_positives),
+                    package.full_name,
+                )
                 issues = [i for i in issues if i.number not in false_positives]
 
             # Recalculate priority with overrides (if rules available)
@@ -251,93 +289,24 @@ class CompatibilityChecker:
             ]
             _LOGGER.debug("Found %d relevant issues for %s", len(issues), package.full_name)
 
-            # Step 5: Determine overall compatibility status
             _LOGGER.debug("Step 5: Determining status for %s", package.full_name)
-            has_incompatible_issue = any(issue.priority >= 15 for issue in issues)
-            has_warning_issue = any(5 <= issue.priority < 15 for issue in issues)
 
-            # Check release notes for breaking change mentions and deprecation
-            release_breaking = False
-            release_deprecated = False
-            matching_releases: list[str] = []
-            if releases:
-                for release in releases[:3]:
-                    body = release.body or ""
-                    if self._contains_breaking_keywords(body):
-                        release_breaking = True
-                        _LOGGER.debug(
-                            "Breaking keywords found in release %s for %s",
-                            release.tag_name,
-                            package.full_name,
-                        )
-                        snippet = body[:500]
-                        snippet = f"{release.tag_name}: {snippet}"
-                        matching_releases.append(snippet)
-                    if self._contains_deprecation_keywords(body):
-                        release_deprecated = True
-                        _LOGGER.debug(
-                            "Deprecation keywords found in release %s for %s",
-                            release.tag_name,
-                            package.full_name,
-                        )
-                        snippet = body[:500]
-                        snippet = f"{release.tag_name}: {snippet}"
-                        matching_releases.append(snippet)
-                        if len(matching_releases) >= 3:
-                            break
+            release_breaking, release_deprecated, matching_releases = self._check_release_notes(
+                releases, package.full_name
+            )
             if matching_releases or release_deprecated:
                 result.data["matching_releases"] = matching_releases
 
-            # Determine final status
-            # Note: release_deprecated is a strong signal - mark as incompatible
-            # because the package author explicitly says to stop using it
-            if not manifest_compatible_current or has_incompatible_issue or release_deprecated:
-                result.status = STATUS_INCOMPATIBLE
-                result.compatible_with_current = False
-                # If ha_next is unknown, compatible_with_next is unknown (None)
-                if ha_next is None:
-                    result.compatible_with_next = None
-                else:
-                    result.compatible_with_next = (
-                        manifest_compatible_next and not has_incompatible_issue and not release_deprecated
-                    )
-                reasons: list[str] = []
-                if not manifest_compatible_current:
-                    reasons.append(
-                        f"Manifest requires HA {result.manifest_ha_requirement}, "
-                        f"current version {ha_current} does not satisfy it"
-                    )
-                if has_incompatible_issue:
-                    high_prio = [i for i in issues if i.priority >= 15]
-                    reasons.append(f"{len(high_prio)} high-priority issue(s) found")
-                if release_deprecated:
-                    reasons.append("Package is deprecated (END OF LIFE)")
-                result.reason = "; ".join(reasons)
-            elif (ha_next and not manifest_compatible_next) or has_warning_issue or release_breaking:
-                result.status = STATUS_WARNING
-                result.compatible_with_current = manifest_compatible_current and not has_warning_issue
-                # If ha_next is unknown, compatible_with_next is unknown (None)
-                if ha_next is None:
-                    result.compatible_with_next = None
-                else:
-                    result.compatible_with_next = manifest_compatible_next and not release_breaking
-                reasons = []
-                if ha_next and not manifest_compatible_next:
-                    reasons.append(
-                        f"Manifest requires HA {result.manifest_ha_requirement}, "
-                        f"next version {ha_next} may not satisfy it"
-                    )
-                if has_warning_issue:
-                    mid_prio = [i for i in issues if 5 <= i.priority < 15]
-                    reasons.append(f"{len(mid_prio)} warning issue(s) found")
-                if release_breaking:
-                    reasons.append("Breaking change keywords found in recent release notes")
-                result.reason = "; ".join(reasons)
-            else:
-                result.status = STATUS_COMPATIBLE
-                result.compatible_with_current = True
-                result.compatible_with_next = None if ha_next is None else True
-                result.reason = "No compatibility issues detected"
+            self._determine_status(
+                manifest_compatible_current,
+                manifest_compatible_next,
+                issues,
+                release_breaking,
+                release_deprecated,
+                ha_current,
+                ha_next,
+                result,
+            )
 
             _LOGGER.info(
                 "Compatibility result for %s: status=%s, current=%s, next=%s, "
@@ -460,6 +429,64 @@ class CompatibilityChecker:
                 priority += weight + 2
 
         return priority
+
+    def _determine_status(
+        self,
+        manifest_compatible_current: bool,
+        manifest_compatible_next: bool,
+        issues: list,
+        release_breaking: bool,
+        release_deprecated: bool,
+        ha_current: str,
+        ha_next: str | None,
+        result: CompatibilityResult,
+    ) -> None:
+        """Determine final compatibility status from all signals."""
+        has_incompatible_issue = any(issue.priority >= 15 for issue in issues)
+        has_warning_issue = any(5 <= issue.priority < 15 for issue in issues)
+
+        if not manifest_compatible_current or has_incompatible_issue or release_deprecated:
+            result.status = STATUS_INCOMPATIBLE
+            result.compatible_with_current = False
+            result.compatible_with_next = (
+                None
+                if ha_next is None
+                else (manifest_compatible_next and not has_incompatible_issue and not release_deprecated)
+            )
+            reasons: list[str] = []
+            if not manifest_compatible_current:
+                reasons.append(
+                    f"Manifest requires HA {result.manifest_ha_requirement}, "
+                    f"current version {ha_current} does not satisfy it"
+                )
+            if has_incompatible_issue:
+                high_prio = [i for i in issues if i.priority >= 15]
+                reasons.append(f"{len(high_prio)} high-priority issue(s) found")
+            if release_deprecated:
+                reasons.append("Package is deprecated (END OF LIFE)")
+            result.reason = "; ".join(reasons)
+        elif (ha_next and not manifest_compatible_next) or has_warning_issue or release_breaking:
+            result.status = STATUS_WARNING
+            result.compatible_with_current = manifest_compatible_current and not has_warning_issue
+            result.compatible_with_next = (
+                None if ha_next is None else (manifest_compatible_next and not release_breaking)
+            )
+            reasons = []
+            if ha_next and not manifest_compatible_next:
+                reasons.append(
+                    f"Manifest requires HA {result.manifest_ha_requirement}, next version {ha_next} may not satisfy it"
+                )
+            if has_warning_issue:
+                mid_prio = [i for i in issues if 5 <= i.priority < 15]
+                reasons.append(f"{len(mid_prio)} warning issue(s) found")
+            if release_breaking:
+                reasons.append("Breaking change keywords found in recent release notes")
+            result.reason = "; ".join(reasons)
+        else:
+            result.status = STATUS_COMPATIBLE
+            result.compatible_with_current = True
+            result.compatible_with_next = None if ha_next is None else True
+            result.reason = "No compatibility issues detected"
 
     @staticmethod
     def _contains_breaking_keywords(text: str) -> bool:

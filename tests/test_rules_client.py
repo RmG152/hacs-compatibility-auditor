@@ -47,7 +47,10 @@ def client(mock_session):
         },
         "keyword_overrides": {
             "overrides": [
-                {"full_name": "custom/repo", "keywords": {"breaking change": 15, "deprecated": 0}},
+                {
+                    "full_name": "custom/repo",
+                    "keywords": {"breaking change": 15, "deprecated": 0},
+                },
             ]
         },
     }
@@ -149,7 +152,10 @@ class TestBlacklist:
         c._rules = {
             "blacklist": {
                 "repositories": [
-                    {"full_name": "broken/package", "ha_version": ">=2026.1.0,<2026.6.0"},
+                    {
+                        "full_name": "broken/package",
+                        "ha_version": ">=2026.1.0,<2026.6.0",
+                    },
                 ]
             }
         }
@@ -295,11 +301,26 @@ class TestAsyncUpdate:
         """Test successful update from GitHub release."""
         release_json = {
             "assets": [
-                {"name": "index.json", "browser_download_url": "https://example.com/index.json"},
-                {"name": "whitelist.yaml", "browser_download_url": "https://example.com/whitelist.yaml"},
-                {"name": "blacklist.yaml", "browser_download_url": "https://example.com/blacklist.yaml"},
-                {"name": "false_positives.yaml", "browser_download_url": "https://example.com/false_positives.yaml"},
-                {"name": "label_overrides.yaml", "browser_download_url": "https://example.com/label_overrides.yaml"},
+                {
+                    "name": "index.json",
+                    "browser_download_url": "https://example.com/index.json",
+                },
+                {
+                    "name": "whitelist.yaml",
+                    "browser_download_url": "https://example.com/whitelist.yaml",
+                },
+                {
+                    "name": "blacklist.yaml",
+                    "browser_download_url": "https://example.com/blacklist.yaml",
+                },
+                {
+                    "name": "false_positives.yaml",
+                    "browser_download_url": "https://example.com/false_positives.yaml",
+                },
+                {
+                    "name": "label_overrides.yaml",
+                    "browser_download_url": "https://example.com/label_overrides.yaml",
+                },
                 {
                     "name": "keyword_overrides.yaml",
                     "browser_download_url": "https://example.com/keyword_overrides.yaml",
@@ -389,7 +410,10 @@ class TestAsyncUpdate:
         """Test that unchanged checksum skips download."""
         release_json = {
             "assets": [
-                {"name": "index.json", "browser_download_url": "https://example.com/index.json"},
+                {
+                    "name": "index.json",
+                    "browser_download_url": "https://example.com/index.json",
+                },
             ]
         }
         index_json_str = json.dumps({"checksum": "same_checksum", "updated": "2026-01-01"})
@@ -421,7 +445,10 @@ class TestAsyncUpdate:
         """Test that a release without index.json doesn't update."""
         release_json = {
             "assets": [
-                {"name": "whitelist.yaml", "browser_download_url": "https://example.com/whitelist.yaml"},
+                {
+                    "name": "whitelist.yaml",
+                    "browser_download_url": "https://example.com/whitelist.yaml",
+                },
             ]
         }
 

@@ -36,8 +36,6 @@ def satisfies_constraint(version: Version, constraint: str) -> bool:
     except InvalidVersion, ValueError:
         _LOGGER.warning("Cannot parse requirement version: %s", req_str)
         return False
-
-    result: bool
     if op == ">=":
         result = version >= req_ver
     elif op == ">":

@@ -42,6 +42,7 @@ class TestAIProviderConfig:
     """Test AIProviderConfig serialization."""
 
     def test_from_dict_openai(self):
+        """Test from dict openai."""
         config = AIProviderConfig.from_dict(
             {
                 "provider_type": PROVIDER_TYPE_OPENAI,
@@ -62,6 +63,7 @@ class TestAIProviderConfig:
         assert config.temperature == 0.5
 
     def test_from_dict_ollama_defaults(self):
+        """Test from dict ollama defaults."""
         config = AIProviderConfig.from_dict(
             {
                 "provider_type": PROVIDER_TYPE_OLLAMA,
@@ -97,6 +99,7 @@ class TestAIProviderConfig:
         assert restored.temperature == original.temperature
 
     def test_ollama_api_key_empty_by_default(self):
+        """Test ollama api key empty by default."""
         config = AIProviderConfig.from_dict(
             {
                 "provider_type": PROVIDER_TYPE_OLLAMA,
@@ -110,6 +113,7 @@ class TestOpenAICompatibleProvider:
     """Test OpenAI-compatible provider."""
 
     def test_build_headers_with_key(self):
+        """Test build headers with key."""
         config = _make_config(PROVIDER_TYPE_OPENAI)
         provider = OpenAICompatibleProvider(config)
         headers = provider._build_headers()
@@ -117,18 +121,21 @@ class TestOpenAICompatibleProvider:
         assert headers["Content-Type"] == "application/json"
 
     def test_build_headers_without_key(self):
+        """Test build headers without key."""
         config = _make_config(PROVIDER_TYPE_OPENAI, api_key="")
         provider = OpenAICompatibleProvider(config)
         headers = provider._build_headers()
         assert "Authorization" not in headers
 
     def test_build_request_url(self):
+        """Test build request url."""
         config = _make_config(PROVIDER_TYPE_OPENAI, base_url="https://openrouter.ai/api/v1")
         provider = OpenAICompatibleProvider(config)
         url = provider._build_request_url()
         assert url == "https://openrouter.ai/api/v1/chat/completions"
 
     def test_build_request_body(self):
+        """Test build request body."""
         config = _make_config(PROVIDER_TYPE_OPENAI)
         provider = OpenAICompatibleProvider(config)
         body = provider._build_request_body("Hello", "System prompt")
@@ -142,6 +149,7 @@ class TestOpenAICompatibleProvider:
         assert body["temperature"] == 0.1
 
     def test_build_request_body_no_system(self):
+        """Test build request body no system."""
         config = _make_config(PROVIDER_TYPE_OPENAI)
         provider = OpenAICompatibleProvider(config)
         body = provider._build_request_body("Hello", "")
@@ -149,12 +157,14 @@ class TestOpenAICompatibleProvider:
         assert body["messages"][0]["role"] == "user"
 
     def test_parse_response(self):
+        """Test parse response."""
         config = _make_config(PROVIDER_TYPE_OPENAI)
         provider = OpenAICompatibleProvider(config)
         data = {"choices": [{"message": {"content": "Hello world"}}]}
         assert provider._parse_response(data) == "Hello world"
 
     def test_parse_response_empty(self):
+        """Test parse response empty."""
         config = _make_config(PROVIDER_TYPE_OPENAI)
         provider = OpenAICompatibleProvider(config)
         assert provider._parse_response({}) == ""
@@ -162,6 +172,7 @@ class TestOpenAICompatibleProvider:
 
     @pytest.mark.asyncio
     async def test_analyze_success(self):
+        """Test analyze success."""
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.__aenter__.return_value = mock_response
@@ -200,6 +211,7 @@ class TestOpenAICompatibleProvider:
 
     @pytest.mark.asyncio
     async def test_analyze_http_error(self):
+        """Test analyze http error."""
         mock_response = AsyncMock()
         mock_response.status = 401
         mock_response.__aenter__.return_value = mock_response
@@ -217,6 +229,7 @@ class TestOpenAICompatibleProvider:
 
     @pytest.mark.asyncio
     async def test_analyze_timeout(self):
+        """Test analyze timeout."""
         mock_session = MagicMock()
         mock_session.post = MagicMock(side_effect=TimeoutError("Connection timed out"))
 
@@ -230,6 +243,7 @@ class TestOllamaProvider:
     """Test Ollama provider (OpenAI-compatible, no auth)."""
 
     def test_build_headers_no_auth(self):
+        """Test build headers no auth."""
         config = _make_config(PROVIDER_TYPE_OLLAMA)
         provider = OllamaProvider(config)
         headers = provider._build_headers()
@@ -237,6 +251,7 @@ class TestOllamaProvider:
         assert headers["Content-Type"] == "application/json"
 
     def test_build_request_url(self):
+        """Test build request url."""
         config = _make_config(PROVIDER_TYPE_OLLAMA, base_url="http://localhost:11434/v1")
         provider = OllamaProvider(config)
         url = provider._build_request_url()
@@ -247,18 +262,25 @@ class TestGeminiProvider:
     """Test Google Gemini provider."""
 
     def test_build_headers(self):
+        """Test build headers."""
         config = _make_config(PROVIDER_TYPE_GEMINI)
         provider = GeminiProvider(config)
         headers = provider._build_headers()
         assert headers["x-goog-api-key"] == "test-key-123"
 
     def test_build_request_url(self):
-        config = _make_config(PROVIDER_TYPE_GEMINI, base_url="https://gemini.test/v1beta", model="gemini-2.0-flash")
+        """Test build request url."""
+        config = _make_config(
+            PROVIDER_TYPE_GEMINI,
+            base_url="https://gemini.test/v1beta",
+            model="gemini-2.0-flash",
+        )
         provider = GeminiProvider(config)
         url = provider._build_request_url()
         assert "gemini.test/v1beta/models/gemini-2.0-flash:generateContent" in url
 
     def test_build_request_body_with_system(self):
+        """Test build request body with system."""
         config = _make_config(PROVIDER_TYPE_GEMINI)
         provider = GeminiProvider(config)
         body = provider._build_request_body("Hello", "Be helpful")
@@ -267,18 +289,21 @@ class TestGeminiProvider:
         assert body["generationConfig"]["maxOutputTokens"] == 1024
 
     def test_build_request_body_no_system(self):
+        """Test build request body no system."""
         config = _make_config(PROVIDER_TYPE_GEMINI)
         provider = GeminiProvider(config)
         body = provider._build_request_body("Hello", "")
         assert "systemInstruction" not in body
 
     def test_parse_response(self):
+        """Test parse response."""
         config = _make_config(PROVIDER_TYPE_GEMINI)
         provider = GeminiProvider(config)
         data = {"candidates": [{"content": {"parts": [{"text": "Hi there"}]}}]}
         assert provider._parse_response(data) == "Hi there"
 
     def test_parse_response_no_candidates(self):
+        """Test parse response no candidates."""
         config = _make_config(PROVIDER_TYPE_GEMINI)
         provider = GeminiProvider(config)
         assert provider._parse_response({}) == ""
@@ -289,6 +314,7 @@ class TestAnthropicProvider:
     """Test Anthropic Claude provider."""
 
     def test_build_headers(self):
+        """Test build headers."""
         config = _make_config(PROVIDER_TYPE_ANTHROPIC)
         provider = AnthropicProvider(config)
         headers = provider._build_headers()
@@ -296,12 +322,14 @@ class TestAnthropicProvider:
         assert headers["anthropic-version"] == "2023-06-01"
 
     def test_build_request_url(self):
+        """Test build request url."""
         config = _make_config(PROVIDER_TYPE_ANTHROPIC)
         provider = AnthropicProvider(config)
         url = provider._build_request_url()
         assert url.endswith("/v1/messages")
 
     def test_build_request_body_with_system(self):
+        """Test build request body with system."""
         config = _make_config(PROVIDER_TYPE_ANTHROPIC, model="claude-sonnet-4-20250514")
         provider = AnthropicProvider(config)
         body = provider._build_request_body("Hello", "System prompt")
@@ -310,18 +338,21 @@ class TestAnthropicProvider:
         assert "model" in body
 
     def test_build_request_body_no_system(self):
+        """Test build request body no system."""
         config = _make_config(PROVIDER_TYPE_ANTHROPIC)
         provider = AnthropicProvider(config)
         body = provider._build_request_body("Hello", "")
         assert "system" not in body
 
     def test_parse_response(self):
+        """Test parse response."""
         config = _make_config(PROVIDER_TYPE_ANTHROPIC)
         provider = AnthropicProvider(config)
         data = {"content": [{"type": "text", "text": "Hello Claude"}]}
         assert provider._parse_response(data) == "Hello Claude"
 
     def test_parse_response_empty(self):
+        """Test parse response empty."""
         config = _make_config(PROVIDER_TYPE_ANTHROPIC)
         provider = AnthropicProvider(config)
         assert provider._parse_response({}) == ""
@@ -332,26 +363,31 @@ class TestCreateProvider:
     """Test provider factory function."""
 
     def test_create_openai(self):
+        """Test create openai."""
         config = _make_config(PROVIDER_TYPE_OPENAI)
         provider = create_provider(config)
         assert isinstance(provider, OpenAICompatibleProvider)
 
     def test_create_gemini(self):
+        """Test create gemini."""
         config = _make_config(PROVIDER_TYPE_GEMINI)
         provider = create_provider(config)
         assert isinstance(provider, GeminiProvider)
 
     def test_create_anthropic(self):
+        """Test create anthropic."""
         config = _make_config(PROVIDER_TYPE_ANTHROPIC)
         provider = create_provider(config)
         assert isinstance(provider, AnthropicProvider)
 
     def test_create_ollama(self):
+        """Test create ollama."""
         config = _make_config(PROVIDER_TYPE_OLLAMA)
         provider = create_provider(config)
         assert isinstance(provider, OllamaProvider)
 
     def test_create_unknown(self):
+        """Test create unknown."""
         config = _make_config("unknown_type")
         provider = create_provider(config)
         assert provider is None
@@ -361,6 +397,7 @@ class TestAIAnalysisResult:
     """Test AIAnalysisResult dataclass."""
 
     def test_to_dict(self):
+        """Test to dict."""
         result = AIAnalysisResult(
             verdict="affected",
             reasoning="Breaking changes detected",
@@ -375,6 +412,7 @@ class TestAIAnalysisResult:
         assert d["provider_used"] == "OpenAI"
 
     def test_to_dict_with_error(self):
+        """Test to dict with error."""
         result = AIAnalysisResult(error="API error")
         d = result.to_dict()
         assert d["error"] == "API error"
@@ -385,6 +423,7 @@ class TestIssueCategoryResult:
     """Test IssueCategoryResult dataclass."""
 
     def test_to_dict(self):
+        """Test to dict."""
         result = IssueCategoryResult(
             category="false_positive",
             confidence=0.95,
