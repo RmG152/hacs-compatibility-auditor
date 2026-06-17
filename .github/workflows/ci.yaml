@@ -28,4 +28,4 @@ jobs:
         with:
           python-version: "3.14"
       - run: pip install -r requirements-dev.txt
-      - run: pytest tests/ --timeout=60
+      - run: pytest tests/

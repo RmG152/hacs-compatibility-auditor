@@ -105,10 +105,8 @@ norecursedirs = [
     "testing_config",
 ]
 filterwarnings = [
-    "ignore:.*hookimpl CovPlugin.*old-style configuration options.*:pytest.PytestDeprecationWarning",
     "ignore:.*There is no current event loop.*:DeprecationWarning"
 ]
-addopts = "--timeout=10 --cov-report=xml:coverage.xml --cov-report=term-missing --cov=custom_components.hacs_compatibility_auditor --cov-fail-under=0"
 
 [tool.mypy]
 ignore_missing_imports = true

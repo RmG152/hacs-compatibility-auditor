@@ -77,71 +77,84 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Set up platforms (sensors)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # ------------------------------------------------------------------ #
-    # Helpers                                                             #
-    # ------------------------------------------------------------------ #
+    await _register_services(hass, coordinator, entry)
 
-    def _get_repository_from_entity_id(entity_id: str) -> str | None:
-        """Resolve a package sensor entity_id to its repository string.
+    # Register options update listener
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
-        Reads the ``repository`` attribute directly from the entity's
-        ``extra_state_attributes`` so there is no ambiguity when owner or
-        repo names contain underscores.
-        """
-        entity_reg = er.async_get(hass)
-        entity = entity_reg.async_get(entity_id)
-        if entity is None:
-            _LOGGER.warning("Entity %s not found in registry", entity_id)
-            return None
-        # Prefer the live state attributes (always available once the sensor
-        # has been initialised) which contain the full ``repository`` field.
-        state = hass.states.get(entity_id)
-        if state is not None:
-            repository = state.attributes.get("repository")
-            if repository:
-                return repository
-        # Fallback: try to reconstruct from unique_id.
-        # unique_id format: hacs_compatibility_auditor_package_{slug}
-        # where slug = full_name.lower().replace("/", "_").
-        # Because owner/repo names can contain underscores we cannot reliably
-        # reverse the slug.  Instead we match against known coordinator data.
-        uid = entity.unique_id or ""
-        prefix = f"{DOMAIN}_package_"
-        if not uid.startswith(prefix):
-            _LOGGER.warning(
-                "Entity %s unique_id %s does not match expected pattern %s",
-                entity_id,
-                uid,
-                prefix,
-            )
-            return None
-        slug = uid[len(prefix) :]
-        # Match slug against coordinator results by comparing lowercased
-        # full_name with underscores replaced by the slug.
-        coordinator_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-        if coordinator_data is not None:
-            results = getattr(coordinator_data, "data", None)
-            if results is not None:
-                for result in results.get("results", []):
-                    full_name = result.get("repository", "")
-                    if full_name.lower().replace("/", "_") == slug:
-                        return full_name
+    # Fire initial compatibility event
+    data = coordinator.data
+    if data and data.get("incompatible_count", 0) > 0:
+        hass.bus.async_fire(
+            f"{DOMAIN}_incompatibility_detected",
+            {
+                "incompatible_count": data.get("incompatible_count", 0),
+                "warning_count": data.get("warning_count", 0),
+                "incompatible_packages": [
+                    r.get("name", "") for r in data.get("results", []) if r.get("status") == "incompatible"
+                ],
+            },
+        )
+
+    return True
+
+
+def _get_provider_name(provider: str | None) -> str | None:
+    """Resolve provider name: 'auto' or None => first configured provider."""
+    if not provider or provider == "auto":
+        return None
+    return provider
+
+
+def _get_repository_from_entity_id(
+    hass: HomeAssistant,
+    entry_id: str,
+    entity_id: str,
+) -> str | None:
+    """Resolve a package sensor entity_id to its repository string."""
+    entity_reg = er.async_get(hass)
+    entity = entity_reg.async_get(entity_id)
+    if entity is None:
+        _LOGGER.warning("Entity %s not found in registry", entity_id)
+        return None
+    state = hass.states.get(entity_id)
+    if state is not None:
+        repository = state.attributes.get("repository")
+        if repository:
+            return repository
+    uid = entity.unique_id or ""
+    prefix = f"{DOMAIN}_package_"
+    if not uid.startswith(prefix):
         _LOGGER.warning(
-            "Cannot resolve repository for entity %s (unique_id=%s)",
+            "Entity %s unique_id %s does not match expected pattern %s",
             entity_id,
             uid,
+            prefix,
         )
         return None
+    slug = uid[len(prefix) :]
+    coordinator_data = hass.data.get(DOMAIN, {}).get(entry_id)
+    if coordinator_data is not None:
+        results = getattr(coordinator_data, "data", None)
+        if results is not None:
+            for result in results.get("results", []):
+                full_name = result.get("repository", "")
+                if full_name.lower().replace("/", "_") == slug:
+                    return full_name
+    _LOGGER.warning(
+        "Cannot resolve repository for entity %s (unique_id=%s)",
+        entity_id,
+        uid,
+    )
+    return None
 
-    def _get_provider_name(provider: str | None) -> str | None:
-        """Resolve provider name: 'auto' or None → first configured provider."""
-        if not provider or provider == "auto":
-            return None  # coordinator / AIManager will use first available
-        return provider
 
-    # ------------------------------------------------------------------ #
-    # Service handlers                                                     #
-    # ------------------------------------------------------------------ #
+async def _register_services(
+    hass: HomeAssistant,
+    coordinator: HacsCompatibilityCoordinator,
+    entry: ConfigEntry,
+) -> None:
+    """Register all services for the integration."""
 
     async def async_check_now(call: ServiceCall) -> ServiceResponse:
         """Handle the check_now service call."""
@@ -154,7 +167,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entity_id = call.data.get("entity_id", "")
         if not entity_id:
             return {"success": False, "error": "entity_id parameter is required"}
-        repository = _get_repository_from_entity_id(entity_id)
+        repository = _get_repository_from_entity_id(hass, entry.entry_id, entity_id)
         if not repository:
             return {
                 "success": False,
@@ -176,7 +189,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         provider = call.data.get("provider", "auto")
         if not entity_id:
             return {"success": False, "error": "entity_id parameter is required"}
-        repository = _get_repository_from_entity_id(entity_id)
+        repository = _get_repository_from_entity_id(hass, entry.entry_id, entity_id)
         if not repository:
             return {
                 "success": False,
@@ -243,7 +256,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         action = call.data.get("action")
         if not entity_id:
             return {"success": False, "error": "entity_id parameter is required"}
-        repository = _get_repository_from_entity_id(entity_id)
+        repository = _get_repository_from_entity_id(hass, entry.entry_id, entity_id)
         if not repository:
             return {
                 "success": False,
@@ -256,10 +269,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             issue_number,
         )
         return await coordinator.async_confirm_report(repository, action, issue_number)
-
-    # ------------------------------------------------------------------ #
-    # Register services                                                    #
-    # ------------------------------------------------------------------ #
 
     hass.services.async_register(
         DOMAIN,
@@ -345,25 +354,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ),
         supports_response=SupportsResponse.OPTIONAL,
     )
-
-    # Register options update listener
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
-
-    # Fire initial compatibility event
-    data = coordinator.data
-    if data and data.get("incompatible_count", 0) > 0:
-        hass.bus.async_fire(
-            f"{DOMAIN}_incompatibility_detected",
-            {
-                "incompatible_count": data.get("incompatible_count", 0),
-                "warning_count": data.get("warning_count", 0),
-                "incompatible_packages": [
-                    r.get("name", "") for r in data.get("results", []) if r.get("status") == "incompatible"
-                ],
-            },
-        )
-
-    return True
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

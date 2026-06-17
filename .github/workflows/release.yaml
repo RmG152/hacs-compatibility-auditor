@@ -42,7 +42,7 @@ jobs:
             -x "*/__pycache__/*" "*.pyc" ".DS_Store"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: hacs-compatibility-auditor.zip
           generate_release_notes: true

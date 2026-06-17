@@ -22,6 +22,8 @@ ha.config_entries.ConfigEntry = MagicMock
 
 
 class MockConfigFlow:
+    """Mock for ConfigFlow."""
+
     VERSION = 1
 
 
@@ -29,7 +31,7 @@ ha.config_entries.ConfigFlow = MockConfigFlow
 
 
 class MockOptionsFlow:
-    pass
+    """Mock for OptionsFlow."""
 
 
 ha.config_entries.OptionsFlow = MockOptionsFlow
@@ -55,8 +57,10 @@ ha.helpers.entity_platform.AddEntitiesCallback = MagicMock
 
 # Update coordinator
 class MockDataUpdateCoordinator:
+    """Mock for DataUpdateCoordinator."""
+
     def __init__(self, *args, **kwargs):
-        pass
+        """Initialize the mock coordinator."""
 
 
 ha.helpers.update_coordinator.DataUpdateCoordinator = MockDataUpdateCoordinator
@@ -64,7 +68,10 @@ ha.helpers.update_coordinator.UpdateFailed = type("UpdateFailed", (Exception,), 
 
 
 class MockCoordinatorEntity:
+    """Mock for CoordinatorEntity."""
+
     def __init__(self, coordinator):
+        """Initialize the mock entity."""
         self.coordinator = coordinator
         self.hass = None
 
@@ -77,7 +84,7 @@ ha.components.sensor.SensorDeviceClass.ENUM = "enum"
 
 
 class MockSensorEntity:
-    pass
+    """Mock for SensorEntity."""
 
 
 ha.components.sensor.SensorEntity = MockSensorEntity
